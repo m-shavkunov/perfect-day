@@ -1,0 +1,39 @@
+:root {
+  font-family: Arial, sans-serif;
+  color: #253b2c;
+  background: #eef2e9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+#app { min-height: 100vh; }
+
+.welcome {
+  width: 100%;
+  max-width: 640px;
+  padding: clamp(28px, 6vw, 64px);
+  border: 1px solid #cdd8c8;
+  border-radius: 24px;
+  background: #fafcf7;
+}
+
+.welcome__label { margin: 0 0 16px; color: #52664a; font-size: 14px; }
+h1 { margin: 0; font-size: clamp(32px, 6vw, 52px); line-height: 1.15; }
+.welcome__description { margin: 24px 0 0; font-size: 20px; }
+
+
+.app-shell { max-width: 1120px; margin: 0 auto; padding: 24px; }
+a { color: #36542f; }
+a:focus-visible { outline: 3px solid #52664a; outline-offset: 4px; border-radius: 4px; }
+.page-content { display: flex; justify-content: center; padding: 48px 0; }
+.action-link { display: inline-block; margin-top: 12px; padding: 10px 16px; border: 1px solid #52664a; border-radius: 8px; text-decoration: none; }
+.action-link:hover { background: #e0e8d9; }
+@media (max-width: 600px) {
+  .app-shell { padding: 16px; }
+  .page-content { padding: 24px 0; }
+}
+
