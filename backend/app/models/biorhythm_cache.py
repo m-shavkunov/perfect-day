@@ -8,7 +8,7 @@ class BiorhythmCache(Base):
         UniqueConstraint("user_id", "date", name="uq_biorhythm_cache_user_date"),
     )
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
     physical = Column(Float, nullable=False)
