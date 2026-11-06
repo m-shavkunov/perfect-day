@@ -18,3 +18,13 @@ class BiorhythmPeriodItem(BaseModel):
 
 class BiorhythmPeriodResponse(BaseModel):
     items: list[BiorhythmPeriodItem]
+
+
+class CriticalDayItem(BaseModel):
+    date: date
+    biorhythm: str
+    direction: str
+
+
+class CriticalDaysResponse(BaseModel):
+    items: list[CriticalDayItem]

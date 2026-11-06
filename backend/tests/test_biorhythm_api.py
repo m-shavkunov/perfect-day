@@ -160,3 +160,104 @@ def test_get_biorhythm_period_without_token(client):
     )
 
     assert response.status_code in (401, 403)
+
+
+def test_get_critical_days(client, db):
+    user = User(
+        email="critical@example.com",
+        password_hash="test_hash",
+        birth_date=date(2004, 8, 20),
+        chronotype="lark"
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id)
+
+    response = client.get(
+        "/biorhythms/critical-days",
+        params={
+            "start_date": "2004-09-03",
+            "end_date": "2004-09-22"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data["items"]) == 5
+
+    critical_days = {
+        (
+            item["date"],
+            item["biorhythm"],
+            item["direction"]
+        )
+        for item in data["items"]
+    }
+
+    assert (
+        "2004-09-03",
+        "emotional",
+        "positive_to_negative"
+    ) in critical_days
+
+    assert (
+        "2004-09-12",
+        "physical",
+        "negative_to_positive"
+    ) in critical_days
+
+    assert (
+        "2004-09-17",
+        "emotional",
+        "negative_to_positive"
+    ) in critical_days
+
+    assert (
+        "2004-09-22",
+        "intellectual",
+        "negative_to_positive"
+    ) in critical_days
+
+
+def test_get_critical_days_invalid_dates(client, db):
+    user = User(
+        email="invalid_critical@example.com",
+        password_hash="test_hash",
+        birth_date=date(2004, 8, 20),
+        chronotype="lark"
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id)
+
+    response = client.get(
+        "/biorhythms/critical-days",
+        params={
+            "start_date": "2004-09-22",
+            "end_date": "2004-09-03"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 400
+
+
+def test_get_critical_days_without_token(client):
+    response = client.get(
+        "/biorhythms/critical-days",
+        params={
+            "start_date": "2004-09-03",
+            "end_date": "2004-09-22"
+        }
+    )
+
+    assert response.status_code in (401, 403)

@@ -10,11 +10,13 @@ from app.models.user import User
 from app.models.biorhythm_cache import BiorhythmCache
 from app.schemas.biorhythm import (
     BiorhythmResponse,
-    BiorhythmPeriodResponse
+    BiorhythmPeriodResponse,
+    CriticalDaysResponse
 )
 from app.services.biorhythm import (
     calculate_biorhythms,
-    calculate_biorhythm_period
+    calculate_biorhythm_period,
+    find_critical_days
 )
 
 
@@ -73,6 +75,27 @@ def get_biorhythm_period(
         )
 
     results = calculate_biorhythm_period(
+        current_user.birth_date,
+        start_date,
+        end_date
+    )
+
+    return {"items": results}
+
+
+@router.get("/critical-days", response_model=CriticalDaysResponse)
+def get_critical_days(
+    start_date: date,
+    end_date: date,
+    current_user: User = Depends(get_current_user)
+):
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Start date must be before or equal to end date"
+        )
+
+    results = find_critical_days(
         current_user.birth_date,
         start_date,
         end_date
