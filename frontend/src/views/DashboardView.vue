@@ -1,12 +1,19 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import chartBaseline from '../assets/chart-baseline.svg'
 import { auth, signOut } from '../state/auth.js'
+import { createDashboardState } from '../state/dashboard.js'
+import { isDateString } from '../utils/dates.js'
 
 const router = useRouter()
 const profileDialog = ref(null)
-const selectedPeriod = ref('day')
+const { state: dashboard, dateRange, isLoading, hasErrors, load, setDate, setPeriod, retryFailed, dispose } = createDashboardState({
+  getToken: () => auth.token,
+  onUnauthorized: handleUnauthorized,
+})
+const dateInput = ref(dashboard.selectedDate)
+const dateError = ref('')
 const periods = [
   { value: 'day', label: 'День', empty: 'Нет данных за день' },
   { value: 'week', label: 'Неделя', empty: 'Нет данных за неделю' },
@@ -17,7 +24,63 @@ const biorhythms = [
   { id: 'emotional', label: 'Эмоциональный' },
   { id: 'intellectual', label: 'Интеллектуальный' },
 ]
-const emptyMessage = computed(() => periods.find(({ value }) => value === selectedPeriod.value).empty)
+const resourceLabels = { daily: 'Показатели', forecast: 'Прогноз', criticalDays: 'Критические дни', recommendations: 'Рекомендации' }
+const requestErrors = computed(() => Object.entries(resourceLabels)
+  .filter(([name]) => dashboard[name].status === 'error')
+  .map(([name, label]) => `${label}: ${dashboard[name].error}`))
+const allLoaded = computed(() => Object.keys(resourceLabels).every((name) => dashboard[name].status === 'success'))
+const emptyMessage = computed(() => periods.find(({ value }) => value === dashboard.selectedPeriod).empty)
+const dateFormatter = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long', timeZone: 'UTC' })
+const percentageFormatter = new Intl.NumberFormat('ru-RU', {
+  style: 'percent',
+  signDisplay: 'exceptZero',
+  maximumFractionDigits: 2,
+})
+const selectedDateLabel = computed(() => dateFormatter.format(new Date(`${dashboard.selectedDate}T12:00:00Z`)))
+const rangeLabel = computed(() => {
+  const start = dateFormatter.format(new Date(`${dateRange.value.startDate}T12:00:00Z`))
+  const end = dateFormatter.format(new Date(`${dateRange.value.endDate}T12:00:00Z`))
+  return dateRange.value.startDate === dateRange.value.endDate ? start : `${start} — ${end}`
+})
+const summaryMessage = computed(() => {
+  if (dashboard.daily.status === 'loading') return 'Загружаем показатели…'
+  if (dashboard.daily.status === 'error') return 'Не удалось загрузить показатели.'
+  return dashboard.daily.status === 'success' ? '' : 'Данные пока не загружены.'
+})
+const chartMessage = computed(() => {
+  if (dashboard.forecast.status === 'loading') return 'Загружаем прогноз…'
+  if (dashboard.forecast.status === 'error') return 'Прогноз недоступен.'
+  return dashboard.forecast.data?.items.length ? 'График пока недоступен.' : emptyMessage.value
+})
+const recommendationsMessage = computed(() => {
+  if (dashboard.recommendations.status === 'loading') return 'Загружаем рекомендации…'
+  if (dashboard.recommendations.status === 'error') return 'Рекомендации недоступны.'
+  const count = dashboard.recommendations.data?.items.length || 0
+  return count ? `Рекомендаций: ${count}` : 'Рекомендаций пока нет'
+})
+
+onMounted(() => load())
+onBeforeUnmount(dispose)
+
+function formatPercentage(value) {
+  return percentageFormatter.format(value / 100).replace('-', '−')
+}
+
+function handleUnauthorized() {
+  signOut()
+  auth.notice = 'Сессия истекла. Войдите снова, чтобы открыть дашборд.'
+  return router.replace({ name: 'login' })
+}
+
+function changeDate(event) {
+  dateInput.value = event.target.value
+  if (!event.target.validity.valid || !isDateString(dateInput.value)) {
+    dateError.value = 'Укажите корректную дату.'
+    return
+  }
+  dateError.value = ''
+  return setDate(dateInput.value)
+}
 
 function openProfile() {
   profileDialog.value.showModal()
@@ -39,33 +102,60 @@ async function logout() {
   <section class="dashboard-page" aria-labelledby="dashboard-title">
     <h1 id="dashboard-title" class="visually-hidden">Дашборд</h1>
     <div class="dashboard-layout">
-      <aside class="dashboard-sidebar" aria-label="Профиль и показатели на сегодня">
+      <aside class="dashboard-sidebar" aria-label="Профиль и показатели на выбранную дату">
         <button class="profile-button" type="button" @click="openProfile">Профиль</button>
         <section class="summary-panel glass-panel" aria-labelledby="summary-title">
-          <h2 id="summary-title" class="visually-hidden">Биоритмы на сегодня</h2>
-          <dl class="metrics">
+          <h2 id="summary-title" class="summary-date">Биоритмы на <time :datetime="dashboard.selectedDate">{{ selectedDateLabel }}</time></h2>
+          <dl class="metrics" :aria-busy="dashboard.daily.status === 'loading'">
             <div v-for="biorhythm in biorhythms" :key="biorhythm.id" class="metric">
               <dt>{{ biorhythm.label }}:</dt>
-              <dd><span aria-hidden="true">—</span><span class="visually-hidden">Нет данных</span></dd>
+              <dd v-if="dashboard.daily.status === 'success'">{{ formatPercentage(dashboard.daily.data[biorhythm.id]) }}</dd>
+              <dd v-else><span aria-hidden="true">—</span><span class="visually-hidden">{{ dashboard.daily.status === 'loading' ? 'Загрузка' : 'Нет данных' }}</span></dd>
             </div>
           </dl>
-          <p class="summary-empty">Данные пока не загружены.</p>
-          <p class="recommendations-empty">Рекомендаций пока нет</p>
+          <p class="summary-scale">Шкала от −100% до +100%.</p>
+          <p v-if="summaryMessage" class="summary-empty" role="status">{{ summaryMessage }}</p>
+          <p class="recommendations-empty" role="status">{{ recommendationsMessage }}</p>
         </section>
       </aside>
       <section class="forecast-panel glass-panel" aria-label="Прогноз биоритмов">
+        <div class="forecast-controls">
+          <label class="date-field" for="dashboard-date">
+            <span>Дата</span>
+            <input
+              id="dashboard-date"
+              :value="dateInput"
+              type="date"
+              min="0001-01-01"
+              max="9999-12-31"
+              required
+              :aria-invalid="Boolean(dateError)"
+              :aria-describedby="dateError ? 'dashboard-date-error' : undefined"
+              @change="changeDate"
+            />
+          </label>
+          <p v-if="dateError" id="dashboard-date-error" class="date-error" role="alert">{{ dateError }}</p>
+          <p class="range-label">{{ rangeLabel }}</p>
+        </div>
         <div class="period-switch" role="group" aria-label="Период прогноза">
           <button
             v-for="period in periods"
             :key="period.value"
             type="button"
-            :aria-pressed="selectedPeriod === period.value"
-            @click="selectedPeriod = period.value"
+            :aria-pressed="dashboard.selectedPeriod === period.value"
+            @click="setPeriod(period.value)"
           >
             {{ period.label }}
           </button>
         </div>
-        <p class="visually-hidden" role="status">{{ emptyMessage }}</p>
+        <div class="request-feedback" :aria-busy="isLoading">
+          <p v-if="isLoading" role="status">Загружаем данные…</p>
+          <p v-else-if="allLoaded" role="status">Данные за выбранные даты загружены.</p>
+          <div v-if="hasErrors" class="request-errors" role="alert">
+            <ul><li v-for="error in requestErrors" :key="error">{{ error }}</li></ul>
+            <button class="retry-button" type="button" :disabled="isLoading" @click="retryFailed">Повторить загрузку</button>
+          </div>
+        </div>
         <div class="chart-list">
           <section
             v-for="biorhythm in biorhythms"
@@ -74,7 +164,7 @@ async function logout() {
             :aria-labelledby="`chart-${biorhythm.id}`"
           >
             <h2 :id="`chart-${biorhythm.id}`">{{ biorhythm.label }}:</h2>
-            <p class="chart-empty">{{ emptyMessage }}</p>
+            <p class="chart-empty">{{ chartMessage }}</p>
             <div class="chart-baseline" aria-hidden="true">
               <img :src="chartBaseline" alt="" />
             </div>
@@ -114,7 +204,7 @@ async function logout() {
   content: '';
   position: fixed;
   inset: 0 auto auto 0;
-  width: 100vw;
+  width: 100%;
   height: 100svh;
   z-index: -1;
   background: url('../assets/leaves.jpg') center / cover no-repeat;
@@ -153,19 +243,34 @@ button, .dialog-link {
   cursor: pointer;
   transition: background-color 160ms ease, box-shadow 160ms ease;
 }
-button:focus-visible, a:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 button:active { background: #344630; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 .dashboard-sidebar { display: flex; flex-direction: column; min-width: 0; }
 .profile-button { align-self: center; width: 312px; max-width: 100%; min-height: 85px; margin-top: 32px; }
 .summary-panel { flex: 1; min-width: 0; min-height: calc(100svh - 192px); margin-top: 46px; padding: 89px 51px 32px; }
-.metrics { margin: 0; font-size: clamp(22px, 2.777778vw, 40px); line-height: 46px; }
-.metric { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.summary-date { margin: 0 0 24px; font-size: 20px; font-weight: 400; line-height: 1.4; overflow-wrap: anywhere; }
+.metrics { margin: 0; font-size: clamp(22px, 2.15vw, 30px); line-height: 1.5; }
+.metric { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.metric + .metric { margin-top: 12px; }
 .metric dt { overflow-wrap: anywhere; }
-.metric dd { margin: 0; font-size: 0.8em; }
+.metric dd { margin: 0 0 0 auto; font-size: 0.8em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.summary-scale { margin: 20px 0 0; font-size: 18px; line-height: 1.4; }
 .summary-empty { margin: 16px 0 0; font-size: 22px; line-height: 26px; }
 .recommendations-empty { max-width: 302px; margin: 137px auto 0; font-size: clamp(24px, 2.777778vw, 40px); line-height: 46px; text-align: center; }
 .forecast-panel { min-width: 0; min-height: calc(100svh - 29px); padding: 32px 0 40px; }
+.forecast-controls { margin: 0 24px 24px 25px; min-width: 0; }
+.date-field { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 22px; }
+.date-field input { min-width: 0; max-width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid rgb(255 255 255 / 60%); border-radius: 0; background: #3f533b; color: #fff; color-scheme: dark; font: inherit; }
+.date-field input[aria-invalid='true'] { border-color: #ffc9bd; }
+.range-label { margin: 12px 0 0; font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.date-error { margin: 12px 0 0; padding: 8px 12px; background: #693d35; font-size: 18px; line-height: 1.4; }
+.request-feedback { margin: 20px 25px 0; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.request-feedback p { margin: 0; }
+.request-errors { padding: 16px; background: #693d35; }
+.request-errors ul { margin: 0; padding-left: 20px; }
+.request-errors li + li { margin-top: 8px; }
+.retry-button { max-width: 100%; min-height: 44px; margin-top: 16px; padding: 10px 16px; font-size: 18px; line-height: 1.4; }
 .period-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 35px; margin: 0 24px 0 25px; }
 .period-switch button { min-height: 85px; padding: 12px 4px; }
 .period-switch button[aria-pressed='true'] { background: #344630; box-shadow: inset 0 0 0 2px #fff; }
@@ -198,16 +303,16 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 @media (min-width: 901px) and (max-width: 1399px) {
   .summary-panel { padding-inline: 32px; }
-  .metrics { font-size: clamp(22px, 2.4vw, 32px); }
+  .metrics { font-size: clamp(20px, 2.15vw, 28px); }
 }
 @media (max-width: 900px) {
   .dashboard-layout { grid-template-columns: minmax(0, 1fr); padding: 24px 16px; gap: 24px; }
   .profile-button { min-height: 64px; margin-top: 0; line-height: 1.2; }
   .summary-panel { min-height: 0; margin-top: 24px; padding: 32px; }
   .metrics { line-height: 1.5; }
-  .metric { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
   .recommendations-empty { max-width: none; margin-top: 32px; line-height: 1.3; }
   .forecast-panel { min-height: 0; padding: 24px 0 32px; }
+  .forecast-controls { margin-inline: 24px; }
   .period-switch { margin: 0 24px; gap: 12px; }
   .period-switch button { min-height: 56px; line-height: 1.2; }
   .chart-list { margin-top: 40px; padding: 0 32px; }
@@ -218,6 +323,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 600px) {
   .summary-panel { padding: 24px; }
   .summary-empty { font-size: 18px; line-height: 1.4; }
+  .forecast-controls, .request-feedback { margin-inline: 16px; }
+  .date-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 20px; }
+  .date-field input { width: 100%; }
+  .range-label { font-size: 18px; }
   .period-switch { margin: 0 16px; gap: 8px; }
   .period-switch button { font-size: 20px; }
   .chart-list { padding: 0 24px; }
