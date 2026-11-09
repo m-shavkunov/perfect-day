@@ -31,3 +31,23 @@ export function getPeriodRange(selectedDate, period) {
     endDate: end.getUTCFullYear() > 9999 ? '9999-12-31' : end.toISOString().slice(0, 10),
   }
 }
+
+export function getAdjacentPeriodDate(selectedDate, period, direction) {
+  getPeriodRange(selectedDate, period)
+  if (direction !== -1 && direction !== 1) throw new RangeError('Выберите предыдущий или следующий период.')
+  const date = new Date(`${selectedDate}T12:00:00Z`)
+
+  if (period === 'month') {
+    const day = date.getUTCDate()
+    date.setUTCDate(1)
+    date.setUTCMonth(date.getUTCMonth() + direction)
+    const monthEnd = new Date(date)
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0)
+    date.setUTCDate(Math.min(day, monthEnd.getUTCDate()))
+  } else {
+    date.setUTCDate(date.getUTCDate() + direction * (period === 'week' ? 7 : 1))
+  }
+
+  if (date.getUTCFullYear() < 1 || date.getUTCFullYear() > 9999) return null
+  return date.toISOString().slice(0, 10)
+}

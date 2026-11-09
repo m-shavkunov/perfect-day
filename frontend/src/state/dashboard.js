@@ -78,10 +78,11 @@ export function createDashboardState({ getToken, onUnauthorized, initialDate = l
   }
 
   function setDate(date) {
-    getPeriodRange(date, state.selectedPeriod)
+    const nextRange = getPeriodRange(date, state.selectedPeriod)
     if (date === state.selectedDate) return Promise.resolve()
+    const rangeChanged = nextRange.startDate !== dateRange.value.startDate || nextRange.endDate !== dateRange.value.endDate
     state.selectedDate = date
-    return load()
+    return load(rangeChanged ? resourceNames : ['daily', 'recommendations'])
   }
 
   function setPeriod(period) {
