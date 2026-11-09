@@ -85,7 +85,7 @@ const rows = computed(() => props.items.map((item) => {
 .forecast-title { margin: 0; font-size: 26px; font-weight: 400; line-height: 1.4; }
 .forecast-hint { flex-basis: 100%; min-height: 2.8em; margin: 0; font-size: 16px; line-height: 1.4; }
 .view-switch { display: flex; gap: 4px; }
-.view-switch button { min-height: 40px; padding: 8px 10px; border: 1px solid transparent; background: #4e624a; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
+.view-switch button { min-height: 44px; padding: 8px 10px; border: 1px solid transparent; background: #4e624a; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
 .view-switch button[aria-pressed='true'] { border-color: #fff; background: #344630; }
 .view-switch button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .forecast-table-wrapper { flex: 1; width: 100%; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }

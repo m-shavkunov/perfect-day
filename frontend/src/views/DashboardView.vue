@@ -3,13 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import BiorhythmForecast from '../components/BiorhythmForecast.vue'
 import CriticalDaysPanel from '../components/CriticalDaysPanel.vue'
+import RecommendationsPanel from '../components/RecommendationsPanel.vue'
 import { auth, signOut } from '../state/auth.js'
 import { createDashboardState } from '../state/dashboard.js'
 import { getAdjacentPeriodDate, isDateString, localDateString } from '../utils/dates.js'
 import { formatPercentage } from '../utils/format.js'
 
 const router = useRouter()
-const profileDialog = ref(null)
 const forecastView = ref('chart')
 const { state: dashboard, dateRange, isLoading, hasErrors, load, setDate, setPeriod, retryFailed, dispose } = createDashboardState({
   getToken: () => auth.token,
@@ -59,12 +59,6 @@ const forecastMessage = computed(() => {
   if (dashboard.forecast.status === 'error') return 'Прогноз недоступен.'
   return emptyMessage.value
 })
-const recommendationsMessage = computed(() => {
-  if (dashboard.recommendations.status === 'loading') return 'Загружаем рекомендации…'
-  if (dashboard.recommendations.status === 'error') return 'Рекомендации недоступны.'
-  const count = dashboard.recommendations.data?.items.length || 0
-  return count ? `Рекомендаций: ${count}` : 'Рекомендаций пока нет'
-})
 
 onMounted(() => load())
 onBeforeUnmount(dispose)
@@ -90,20 +84,6 @@ function selectDate(date) {
   return setDate(date)
 }
 
-function openProfile() {
-  profileDialog.value.showModal()
-}
-
-function closeProfile() {
-  profileDialog.value.close()
-}
-
-async function logout() {
-  closeProfile()
-  signOut()
-  auth.notice = ''
-  await router.replace({ name: 'login' })
-}
 </script>
 
 <template>
@@ -111,7 +91,7 @@ async function logout() {
     <h1 id="dashboard-title" class="visually-hidden">Дашборд</h1>
     <div class="dashboard-layout">
       <aside class="dashboard-sidebar" aria-label="Профиль и показатели на выбранную дату">
-        <button class="profile-button" type="button" @click="openProfile">Профиль</button>
+        <button class="profile-button" type="button" @click="router.push({ name: 'profile' })">Профиль</button>
         <section class="summary-panel glass-panel" aria-labelledby="summary-title" tabindex="0">
           <h2 id="summary-title" class="summary-date">Биоритмы на <time :datetime="dashboard.selectedDate">{{ selectedDateLabel }}</time></h2>
           <dl class="metrics" :aria-busy="dashboard.daily.status === 'loading'">
@@ -130,10 +110,16 @@ async function logout() {
             @select-date="selectDate"
             @retry="load(['criticalDays'])"
           />
-          <p class="recommendations-empty" role="status">{{ recommendationsMessage }}</p>
+          <RecommendationsPanel
+            :items="dashboard.recommendations.status === 'success' ? dashboard.recommendations.data.items : []"
+            :status="dashboard.recommendations.status"
+            :error="dashboard.recommendations.error"
+            :selected-date="dashboard.selectedDate"
+            @retry="load(['recommendations'])"
+          />
         </section>
       </aside>
-      <section class="forecast-panel glass-panel" aria-label="Прогноз биоритмов">
+      <section class="forecast-panel glass-panel" :class="{ 'forecast-panel--expanded': hasErrors || dateError }" aria-label="Прогноз биоритмов">
         <div class="forecast-controls">
           <label class="date-field" for="dashboard-date">
             <span>Дата</span>
@@ -203,20 +189,6 @@ async function logout() {
         </div>
       </section>
     </div>
-    <dialog ref="profileDialog" class="profile-dialog" aria-labelledby="profile-dialog-title">
-      <div class="dialog-header">
-        <h2 id="profile-dialog-title">Профиль</h2>
-        <button class="dialog-close" type="button" aria-label="Закрыть профиль" @click="closeProfile">×</button>
-      </div>
-      <dl v-if="auth.user" class="profile-details">
-        <div><dt>Email</dt><dd>{{ auth.user.email }}</dd></div>
-        <div><dt>Дата рождения</dt><dd>{{ auth.user.birth_date.split('-').reverse().join('.') }}</dd></div>
-        <div><dt>Хронотип</dt><dd>{{ { lark: 'Жаворонок', owl: 'Сова', dove: 'Голубь' }[auth.user.chronotype] || auth.user.chronotype }}</dd></div>
-      </dl>
-      <div class="dialog-actions">
-        <button type="button" @click="logout">Выйти из аккаунта</button>
-      </div>
-    </dialog>
   </section>
 </template>
 
@@ -262,7 +234,7 @@ async function logout() {
   white-space: nowrap;
 }
 .glass-panel { background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
-button, .dialog-link {
+button {
   padding: 12px;
   border: 0;
   border-radius: 0;
@@ -289,14 +261,13 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .metric dd { margin: 0 0 0 auto; font-size: 0.8em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .summary-scale { margin: 20px 0 0; font-size: 18px; line-height: 1.4; }
 .summary-empty { margin: 16px 0 0; font-size: 22px; line-height: 26px; }
-.recommendations-empty { max-width: 302px; margin: 24px auto 0; font-size: clamp(24px, 2.777778vw, 40px); line-height: 46px; text-align: center; }
 .forecast-panel { display: flex; flex-direction: column; min-width: 0; height: calc(100svh - 29px); min-height: 680px; padding: 32px 0 40px; }
 .forecast-controls, .period-switch, .period-navigation, .request-feedback { flex: none; }
 .forecast-controls { margin: 0 24px 24px 25px; min-width: 0; }
 .date-field { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 22px; }
 .date-field input { min-width: 0; max-width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid rgb(255 255 255 / 60%); border-radius: 0; background: #3f533b; color: #fff; color-scheme: dark; font: inherit; }
 .date-field input[aria-invalid='true'] { border-color: #ffc9bd; }
-.range-label { margin: 12px 0 0; font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.range-label { min-height: 2.8em; margin: 12px 0 0; font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
 .date-error { margin: 12px 0 0; padding: 8px 12px; background: #693d35; font-size: 18px; line-height: 1.4; }
 .request-feedback { margin: 20px 25px 0; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
 .request-feedback p { margin: 0; }
@@ -311,23 +282,14 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .period-navigation button { min-width: 48px; min-height: 44px; padding: 8px 16px; font-size: 20px; line-height: 1.4; }
 .forecast-results { flex: 1; min-width: 0; min-height: 0; margin: 24px 25px 0; overflow: auto; overscroll-behavior: contain; }
 .forecast-empty { display: grid; place-items: center; height: 100%; margin: 0; padding: 12px; font-size: 20px; line-height: 1.4; text-align: center; }
-.profile-dialog { width: min(640px, calc(100% - 32px)); max-height: calc(100svh - 48px); padding: 32px; border: 1px solid rgb(255 255 255 / 40%); color: #fff; background: #3f533b; font: inherit; }
-.profile-dialog::backdrop { background: rgb(0 0 0 / 60%); }
-.dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.dialog-header h2 { margin: 0; font-size: 40px; font-weight: 400; }
-.dialog-close { padding: 0; width: 48px; min-height: 48px; font-size: 36px; line-height: 1; }
-.profile-dialog p { margin: 24px 0; font-size: 24px; line-height: 1.4; }
-.profile-details { margin: 24px 0; font-size: 22px; line-height: 1.4; overflow-wrap: anywhere; }
-.profile-details div + div { margin-top: 16px; }
-.profile-details dt { font-weight: 700; }
-.profile-details dd { margin: 4px 0 0; }
-.dialog-actions { display: flex; flex-wrap: wrap; gap: 16px; }
-.dialog-actions button, .dialog-link { font-size: 22px; line-height: 1.4; }
-.dialog-link { display: inline-block; text-align: center; text-decoration: none; }
 @media (hover: hover) {
-  button:not(:disabled):hover, .dialog-link:hover { background: #5b7055; }
+  button:not(:disabled):hover { background: #5b7055; }
   .period-switch button[aria-pressed='true']:hover { background: #344630; }
   button:not(:disabled):active { background: #344630; }
+}
+@media (min-width: 901px) {
+  .forecast-panel--expanded { height: auto; }
+  .forecast-panel--expanded .forecast-results { flex: none; height: clamp(360px, 50svh, 520px); }
 }
 @media (min-width: 901px) and (max-width: 1399px) {
   .summary-panel { padding-inline: 32px; }
@@ -338,9 +300,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   .profile-button { min-height: 64px; margin-top: 0; line-height: 1.2; }
   .summary-panel { height: auto; min-height: 0; margin-top: 24px; padding: 32px; overflow: visible; }
   .metrics { line-height: 1.5; }
-  .recommendations-empty { max-width: none; margin-top: 32px; line-height: 1.3; }
   .forecast-panel { height: auto; min-height: 0; padding: 24px 0 32px; }
-  .forecast-results { flex: none; height: clamp(320px, 55svh, 520px); }
+  .forecast-results { flex: none; height: clamp(440px, 65svh, 600px); }
   .forecast-controls { margin-inline: 24px; }
   .period-switch { margin: 0 24px; gap: 12px; }
   .period-switch button { min-height: 56px; line-height: 1.2; }
@@ -355,10 +316,9 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   .period-switch { margin: 0 16px; gap: 8px; }
   .period-switch button { font-size: 20px; }
   .forecast-empty { font-size: 18px; }
-  .profile-dialog { padding: 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  button, .dialog-link { transition: none; }
+  button { transition: none; }
 }
 </style>
 

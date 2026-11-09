@@ -68,4 +68,7 @@ h3 { margin: 0; font-size: 23px; font-weight: 400; }
 .transition { white-space: nowrap; }
 .critical-retry { min-height: 44px; padding: 10px; border: 1px solid #fff; background: #4e624a; color: #fff; font: inherit; cursor: pointer; }
 @media (hover: hover) { .critical-day-button:hover, .critical-retry:hover { background: #4e624a; } }
+@media (max-width: 900px) {
+  .critical-content { height: 160px; }
+}
 </style>
