@@ -44,6 +44,7 @@ export async function apiRequest(path, { method = 'GET', body, token, query, sig
       cache: 'no-store',
       redirect: 'error',
     })
+    if (method === 'DELETE' && response.status === 204) return
     const data = await response.json().catch(() => null)
 
     if (!response.ok) throw new ApiError(errorMessage(response.status, data?.detail, path), response.status)
