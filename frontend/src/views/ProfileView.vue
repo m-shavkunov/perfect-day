@@ -26,5 +26,5 @@ function logout() {
 </script>
 
 <template>
-  <ProfileSettings v-if="auth.user" :user="auth.user" :form="profile.state" @change="Object.assign(profile.state, $event)" @save="profile.save" @back="router.push({ name: 'dashboard' })" @logout="logout" />
+  <ProfileSettings v-if="auth.user" :user="auth.user" :form="profile.state" @change="Object.assign(profile.state, $event)" @save="profile.save" @logout="logout" />
 </template>

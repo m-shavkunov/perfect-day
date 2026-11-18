@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AppNavigation from '../components/AppNavigation.vue'
 import BiorhythmForecast from '../components/BiorhythmForecast.vue'
 import CriticalDaysPanel from '../components/CriticalDaysPanel.vue'
 import RecommendationsPanel from '../components/RecommendationsPanel.vue'
@@ -90,8 +91,8 @@ function selectDate(date) {
   <section class="dashboard-page" aria-labelledby="dashboard-title">
     <h1 id="dashboard-title" class="visually-hidden">Дашборд</h1>
     <div class="dashboard-layout">
-      <aside class="dashboard-sidebar" aria-label="Профиль и показатели на выбранную дату">
-        <button class="profile-button" type="button" @click="router.push({ name: 'profile' })">Профиль</button>
+      <aside class="dashboard-sidebar" aria-label="Разделы приложения и показатели на выбранную дату">
+        <AppNavigation class="dashboard-navigation" />
         <section class="summary-panel glass-panel" aria-labelledby="summary-title" tabindex="0">
           <h2 id="summary-title" class="summary-date">Биоритмы на <time :datetime="dashboard.selectedDate">{{ selectedDateLabel }}</time></h2>
           <dl class="metrics" :aria-busy="dashboard.daily.status === 'loading'">
@@ -250,8 +251,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 button:active { background: #344630; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 .dashboard-sidebar { display: flex; flex-direction: column; min-width: 0; align-self: start; }
-.profile-button { align-self: center; width: 312px; max-width: 100%; min-height: 85px; margin-top: 32px; }
-.summary-panel { flex: none; min-width: 0; height: calc(100svh - 192px); min-height: 520px; margin-top: 46px; padding: 32px 51px; overflow: auto; overscroll-behavior: contain; }
+.dashboard-navigation { align-self: center; margin-top: 32px; }
+.summary-panel { flex: none; min-width: 0; height: calc(100svh - 61px - var(--app-navigation-height) - var(--navigation-content-gap)); min-height: 520px; margin-top: var(--navigation-content-gap); padding: 32px 51px; overflow: auto; overscroll-behavior: contain; }
 .summary-panel:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .summary-date { margin: 0 0 24px; font-size: 20px; font-weight: 400; line-height: 1.4; overflow-wrap: anywhere; }
 .metrics { margin: 0; font-size: clamp(22px, 2.15vw, 30px); line-height: 1.5; }
@@ -297,8 +298,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 @media (max-width: 900px) {
   .dashboard-layout { grid-template-columns: minmax(0, 1fr); padding: 24px 16px; gap: 24px; }
-  .profile-button { min-height: 64px; margin-top: 0; line-height: 1.2; }
-  .summary-panel { height: auto; min-height: 0; margin-top: 24px; padding: 32px; overflow: visible; }
+  .dashboard-navigation { margin-top: 0; }
+  .summary-panel { height: auto; min-height: 0; padding: 32px; overflow: visible; }
   .metrics { line-height: 1.5; }
   .forecast-panel { height: auto; min-height: 0; padding: 24px 0 32px; }
   .forecast-results { flex: none; height: clamp(440px, 65svh, 600px); }

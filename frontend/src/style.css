@@ -1,4 +1,6 @@
 :root {
+  --navigation-content-gap: 46px;
+  --app-navigation-height: 85px;
   font-family: Arial, sans-serif;
   color: #253b2c;
   background: #eef2e9;
@@ -32,6 +34,12 @@ a:focus-visible { outline: 3px solid #52664a; outline-offset: 4px; border-radius
 .page-content { display: flex; justify-content: center; padding: 48px 0; }
 .action-link { display: inline-block; margin-top: 12px; padding: 10px 16px; border: 1px solid #52664a; border-radius: 8px; text-decoration: none; }
 .action-link:hover { background: #e0e8d9; }
+@media (max-width: 1200px) {
+  :root { --app-navigation-height: 96px; }
+}
+@media (max-width: 900px) {
+  :root { --navigation-content-gap: 24px; --app-navigation-height: 112px; }
+}
 @media (max-width: 600px) {
   .app-shell { padding: 16px; }
   .page-content { padding: 24px 0; }
