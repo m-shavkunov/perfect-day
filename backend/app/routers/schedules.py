@@ -9,6 +9,7 @@ from app.core.security import get_current_user
 from app.models.task import Task
 from app.models.schedule import Schedule
 from app.models.schedule_item import ScheduleItem
+from app.models.user_settings import UserSettings
 from app.schemas.schedule import (
     ScheduleItemResponse,
     ScheduleResponse,
@@ -46,20 +47,28 @@ def build_schedule_response(schedule, db):
     }
 
 
-def validate_schedule_items(items):
+def validate_schedule_items(items, settings=None):
+    work_start = settings.work_start if settings else WORK_START
+    work_end = settings.work_end if settings else WORK_END
+    lunch_start = settings.lunch_start if settings else LUNCH_START
+    lunch_end = settings.lunch_end if settings else LUNCH_END
+    break_duration = (
+        settings.break_duration_min if settings else BREAK_DURATION
+    )
+
     sorted_items = sorted(items, key=lambda item: item.start_time)
 
     previous_end = None
     seen_task_ids = set()
 
     for item in sorted_items:
-        if item.start_time < WORK_START or item.end_time > WORK_END:
+        if item.start_time < work_start or item.end_time > work_end:
             raise HTTPException(
                 status_code=422,
                 detail="Schedule item must be within working hours"
             )
 
-        if item.start_time < LUNCH_END and item.end_time > LUNCH_START:
+        if item.start_time < lunch_end and item.end_time > lunch_start:
             raise HTTPException(
                 status_code=422,
                 detail="Schedule item cannot overlap lunch"
@@ -85,10 +94,10 @@ def validate_schedule_items(items):
                 - datetime.combine(date.min, item.start_time)
             )
 
-            if duration.total_seconds() != BREAK_DURATION * 60:
+            if duration.total_seconds() != break_duration * 60:
                 raise HTTPException(
                     status_code=422,
-                    detail="Break must be exactly 10 minutes"
+                    detail=f"Break must be exactly {break_duration} minutes"
                 )
 
         previous_end = item.end_time
@@ -110,6 +119,14 @@ def get_owned_schedule(schedule_id, db, current_user):
     return schedule
 
 
+def get_user_settings(db, current_user):
+    return (
+        db.query(UserSettings)
+        .filter(UserSettings.user_id == current_user.id)
+        .first()
+    )
+
+
 @router.post("/generate", response_model=ScheduleGenerateResponse)
 def create_schedule(
     target_date: date,
@@ -125,11 +142,14 @@ def create_schedule(
         .all()
     )
 
+    settings = get_user_settings(db, current_user)
+
     result = generate_schedule(
         tasks,
         target_date,
         current_user.birth_date,
-        current_user.chronotype
+        current_user.chronotype,
+        settings=settings
     )
 
     schedule = (
@@ -188,8 +208,9 @@ def update_schedule(
     current_user=Depends(get_current_user)
 ):
     schedule = get_owned_schedule(schedule_id, db, current_user)
+    settings = get_user_settings(db, current_user)
 
-    validate_schedule_items(schedule_data.items)
+    validate_schedule_items(schedule_data.items, settings)
 
     task_ids = [
         item.task_id

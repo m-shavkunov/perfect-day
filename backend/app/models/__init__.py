@@ -3,3 +3,4 @@ from app.models.task import Task
 from app.models.schedule import Schedule
 from app.models.schedule_item import ScheduleItem
 from app.models.biorhythm_cache import BiorhythmCache
+from app.models.user_settings import UserSettings

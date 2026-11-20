@@ -5,6 +5,10 @@ from app.routers.users import router as users_router
 from app.routers.biorhythms import router as biorhythms_router
 from app.routers.tasks import router as tasks_router
 from app.routers.recommendations import router as recommendations_router
+
+from app.routers.settings import router as settings_router
+
+
 from app.routers.schedules import router as schedules_router
 
 app = FastAPI(
@@ -18,7 +22,11 @@ app.include_router(users_router)
 app.include_router(biorhythms_router)
 app.include_router(tasks_router)
 app.include_router(recommendations_router)
+
+app.include_router(settings_router)
+
 app.include_router(schedules_router)
+
 
 @app.get("/")
 def root():
