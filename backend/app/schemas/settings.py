@@ -1,6 +1,5 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import time
-from typing import Optional
 
 class UserSettingsBase(BaseModel):
     work_start: time = Field(default=time(9, 0))
@@ -27,5 +26,4 @@ class UserSettingsResponse(UserSettingsBase):
     id: int
     user_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
