@@ -1,5 +1,7 @@
 
-from datetime import date
+from datetime import date, time
+
+from app.models.user_settings import UserSettings
 
 from app.models.user import User
 from app.models.task import Task
@@ -260,3 +262,49 @@ def test_update_schedule_rejects_completed_task(client, db):
     )
 
     assert response.status_code == 422
+
+
+def test_update_schedule_uses_user_settings(client, db):
+    user, headers = create_user(db)
+    task = create_task(db, user.id, duration=60)
+
+    settings = UserSettings(
+        user_id=user.id,
+        work_start=time(10, 0),
+        work_end=time(19, 0),
+        lunch_start=time(14, 0),
+        lunch_end=time(15, 0),
+        break_duration_min=15,
+        work_before_break_min=45
+    )
+    db.add(settings)
+    db.commit()
+
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": task.id,
+                    "item_type": "task",
+                    "start_time": "10:00:00",
+                    "end_time": "11:00:00"
+                },
+                {
+                    "task_id": None,
+                    "item_type": "break",
+                    "start_time": "11:00:00",
+                    "end_time": "11:15:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 200
+
+    items = response.json()["items"]
+    assert items[0]["start_time"] == "10:00:00"
+    assert items[1]["end_time"] == "11:15:00"

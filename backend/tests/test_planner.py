@@ -106,3 +106,37 @@ def test_break_does_not_go_beyond_working_day():
 
     assert result["items"] == []
     assert result["unscheduled_task_ids"] == [1]
+
+
+def test_planner_uses_user_settings():
+    settings = SimpleNamespace(
+        work_start=time(10, 0),
+        work_end=time(19, 0),
+        lunch_start=time(14, 0),
+        lunch_end=time(15, 0),
+        break_duration_min=15,
+        work_before_break_min=45
+    )
+
+    result = generate_schedule(
+        [make_task(1, 60)],
+        TARGET_DATE,
+        BIRTH_DATE,
+        "lark",
+        settings=settings
+    )
+
+    assert result["items"] == [
+        {
+            "task_id": 1,
+            "item_type": "task",
+            "start_time": time(10, 0),
+            "end_time": time(11, 0)
+        },
+        {
+            "task_id": None,
+            "item_type": "break",
+            "start_time": time(11, 0),
+            "end_time": time(11, 15)
+        }
+    ]

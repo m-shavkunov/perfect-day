@@ -64,15 +64,22 @@ def _get_task_sort_key(task, birth_date, target_date, chronotype):
     )
 
 
-def _add_break(items, current_time, day_end, lunch_start, lunch_end):
+def _add_break(
+    items,
+    current_time,
+    day_end,
+    lunch_start,
+    lunch_end,
+    break_duration
+):
     if lunch_start <= current_time < lunch_end:
         current_time = lunch_end
 
-    break_end = current_time + timedelta(minutes=BREAK_DURATION)
+    break_end = current_time + timedelta(minutes=break_duration)
 
     if current_time < lunch_start and break_end > lunch_start:
         current_time = lunch_end
-        break_end = current_time + timedelta(minutes=BREAK_DURATION)
+        break_end = current_time + timedelta(minutes=break_duration)
 
     if break_end > day_end:
         return current_time
@@ -87,7 +94,22 @@ def _add_break(items, current_time, day_end, lunch_start, lunch_end):
     return break_end
 
 
-def generate_schedule(tasks, target_date, birth_date, chronotype):
+def generate_schedule(
+    tasks,
+    target_date,
+    birth_date,
+    chronotype,
+    settings=None
+):
+    work_start = settings.work_start if settings else WORK_START
+    work_end = settings.work_end if settings else WORK_END
+    lunch_start_time = settings.lunch_start if settings else LUNCH_START
+    lunch_end_time = settings.lunch_end if settings else LUNCH_END
+    break_duration = settings.break_duration_min if settings else BREAK_DURATION
+    work_before_break = (
+        settings.work_before_break_min if settings else WORK_BEFORE_BREAK
+    )
+
     tasks = sorted(
         tasks,
         key=lambda task: _get_task_sort_key(
@@ -98,11 +120,11 @@ def generate_schedule(tasks, target_date, birth_date, chronotype):
         )
     )
 
-    day_start = datetime.combine(target_date, WORK_START)
-    day_end = datetime.combine(target_date, WORK_END)
+    day_start = datetime.combine(target_date, work_start)
+    day_end = datetime.combine(target_date, work_end)
 
-    lunch_start = datetime.combine(target_date, LUNCH_START)
-    lunch_end = datetime.combine(target_date, LUNCH_END)
+    lunch_start = datetime.combine(target_date, lunch_start_time)
+    lunch_end = datetime.combine(target_date, lunch_end_time)
 
     current_time = day_start
     accumulated_work = 0
@@ -136,13 +158,14 @@ def generate_schedule(tasks, target_date, birth_date, chronotype):
         current_time = task_end
         accumulated_work += task.duration_min
 
-        if accumulated_work >= WORK_BEFORE_BREAK:
+        if accumulated_work >= work_before_break:
             current_time = _add_break(
                 items,
                 current_time,
                 day_end,
                 lunch_start,
-                lunch_end
+                lunch_end,
+                break_duration
             )
 
             accumulated_work = 0
