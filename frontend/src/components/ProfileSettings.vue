@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import AppNavigation from './AppNavigation.vue'
 import fieldAsset from '../assets/profile-field.svg'
 import { isDateString } from '../utils/dates.js'
 
@@ -8,7 +9,7 @@ const props = defineProps({
   form: { type: Object, required: true },
   displayName: { type: String, default: '' },
 })
-const emit = defineEmits(['back', 'logout', 'save', 'change'])
+const emit = defineEmits(['logout', 'save', 'change'])
 const birthDateLabel = computed(() => isDateString(props.user.birth_date) ? props.user.birth_date.split('-').reverse().join('.') : 'Не указано')
 const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'owl', label: 'Сова' }, { value: 'dove', label: 'Голубь' }]
 </script>
@@ -17,7 +18,7 @@ const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'o
   <section class="profile-page" aria-labelledby="profile-page-title">
     <div class="profile-layout">
       <div class="settings-backdrop" aria-hidden="true"></div>
-      <button class="back-button" type="button" @click="$emit('back')">← Назад</button>
+      <AppNavigation class="profile-navigation" />
       <h1 id="profile-page-title" class="profile-page-title">Настройки профиля и планирования</h1>
       <section class="user-panel" aria-labelledby="user-data-title">
         <h2 id="user-data-title">Данные пользователя</h2>
@@ -78,14 +79,14 @@ const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'o
 <style scoped>
 .profile-page { position: relative; isolation: isolate; width: 100%; min-height: 100svh; background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff; color: #fff; font-family: 'Times New Roman', serif; font-size: clamp(22px, 2.777778vw, 40px); line-height: 46px; }
 .profile-page::before { content: ''; position: fixed; inset: 0; height: 100svh; z-index: -1; background: url('../assets/leaves.jpg') center / cover no-repeat; opacity: 0.6; pointer-events: none; }
-.profile-layout { display: grid; grid-template-columns: minmax(0, 476fr) minmax(0, 869fr); grid-template-rows: 85px minmax(822px, 1fr); grid-template-areas: 'back title' 'user planning'; gap: 56px 34px; position: relative; isolation: isolate; width: 100%; max-width: 1440px; min-height: 100svh; margin: 0 auto; padding: 61px 31px 0 30px; }
+.profile-layout { display: grid; grid-template-columns: minmax(0, 476fr) minmax(0, 869fr); grid-template-rows: var(--app-navigation-height) minmax(822px, 1fr); grid-template-areas: 'navigation title' 'user planning'; gap: var(--navigation-content-gap) 34px; position: relative; isolation: isolate; width: 100%; max-width: 1440px; min-height: 100svh; margin: 0 auto; padding: 61px 31px 0 30px; }
 .settings-backdrop { grid-column: 2; grid-row: 1 / 3; z-index: -1; margin-top: -32px; background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 button { border: 0; border-radius: 0; color: inherit; font: inherit; line-height: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 button:disabled { opacity: 0.65; cursor: wait; }
-.back-button { grid-area: back; justify-self: center; width: min(312px, 100%); height: 85px; padding: 0 12px; background: #4e624a; }
+.profile-navigation { grid-area: navigation; justify-self: center; }
 .profile-page-title { grid-area: title; display: grid; place-items: center; margin: 0 29px 0 30px; padding: 0 12px; background: #4e624a; font: inherit; text-align: center; }
-.user-panel { grid-area: user; display: flex; flex-direction: column; min-width: 0; margin-top: -10px; padding: 16px 32px 39px; background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
+.user-panel { grid-area: user; display: flex; flex-direction: column; min-width: 0; padding: 16px 32px 39px; background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 h2 { margin: 0; font: inherit; text-align: center; }
 .user-panel h2 { transform: translateX(1.5px); white-space: nowrap; }
 .identity-fields { margin: 25px 0 0; }
@@ -104,7 +105,7 @@ h2 { margin: 0; font: inherit; text-align: center; }
 .email-value--very-long { font-size: max(16px, 0.5em); }
 .email-value:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .logout-button { position: relative; isolation: isolate; flex: none; width: min(409px, 100%); height: 81px; margin: auto 0 0 3px; padding: 0 8px; overflow: hidden; background: none; }
-.planning-panel { grid-area: planning; display: flex; flex-direction: column; min-width: 0; min-height: 783px; margin: 0 29px 39px 30px; padding: 16px 0 27px; background: #4e624a; }
+.planning-panel { grid-area: planning; display: flex; flex-direction: column; min-width: 0; min-height: 783px; margin: 10px 29px 39px 30px; padding: 16px 0 27px; background: #4e624a; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend { float: left; width: 100%; padding: 0; text-align: center; }
 legend + div { clear: both; }
@@ -130,9 +131,8 @@ fieldset:disabled label, fieldset:disabled input { cursor: wait; }
 @media (min-width: 1001px) and (max-width: 1250px) { .user-panel { padding-inline: 20px; } .user-panel h2 { font-size: 0.9em; } label { gap: 8px; } input { width: 24px; height: 24px; } .priority-options { padding-inline: 24px; } }
 @media (max-width: 1000px) {
   .profile-page { font-size: 26px; line-height: 1.4; }
-  .profile-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'back' 'title' 'user' 'planning'; gap: 24px; padding: 24px 16px; }
+  .profile-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'navigation' 'title' 'user' 'planning'; gap: 24px; padding: 24px 16px; }
   .settings-backdrop { display: none; }
-  .back-button { height: 64px; }
   .profile-page-title { min-height: 76px; margin: 0; padding: 16px; }
   .user-panel { align-items: center; margin-top: 0; padding: 24px; }
   .user-panel h2 { transform: none; white-space: normal; }
