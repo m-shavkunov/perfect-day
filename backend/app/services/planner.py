@@ -1,7 +1,7 @@
 
 from datetime import date, time, datetime, timedelta
 
-from app.services.recommendation import generate_recommendation
+from app.services.biorhythm import calculate_biorhythms
 
 
 WORK_START = time(9, 0)
@@ -19,16 +19,20 @@ PRIORITY_ORDER = {
     "low": 2
 }
 
+ACTIVITY_BY_TASK_TYPE = {
+    "intellectual": "intellectual",
+    "physical": "physical",
+    "creative": "emotional"
+}
 
-def _get_recommendation_score(task, birth_date, target_date, chronotype):
-    recommendation = generate_recommendation(
-        task_type=task.type,
-        birth_date=birth_date,
-        target_date=target_date,
-        chronotype=chronotype
-    )
 
-    return recommendation.get("activity_value") or 0
+def _get_recommendation_score(task, biorhythms):
+    activity_name = ACTIVITY_BY_TASK_TYPE.get(task.type)
+
+    if activity_name is None:
+        return 0
+
+    return biorhythms.get(activity_name) or 0
 
 
 def _get_deadline_key(deadline):
@@ -44,16 +48,14 @@ def _get_deadline_key(deadline):
     return date.max, time.max
 
 
-def _get_task_sort_key(task, birth_date, target_date, chronotype):
+def _get_task_sort_key(task, biorhythms):
     priority = PRIORITY_ORDER.get(task.priority, 3)
 
     deadline_date, deadline_time = _get_deadline_key(task.deadline)
 
     recommendation_score = _get_recommendation_score(
         task,
-        birth_date,
-        target_date,
-        chronotype
+        biorhythms
     )
 
     return (
@@ -110,13 +112,16 @@ def generate_schedule(
         settings.work_before_break_min if settings else WORK_BEFORE_BREAK
     )
 
+    biorhythms = calculate_biorhythms(
+        birth_date,
+        target_date
+    )
+
     tasks = sorted(
         tasks,
         key=lambda task: _get_task_sort_key(
             task,
-            birth_date,
-            target_date,
-            chronotype
+            biorhythms
         )
     )
 

@@ -5,9 +5,11 @@ def generate_recommendation(
     task_type: str,
     birth_date,
     target_date,
-    chronotype: str
+    chronotype: str,
+    biorhythms: dict | None = None
 ) -> dict:
-    biorhythms = calculate_biorhythms(birth_date, target_date)
+    if biorhythms is None:
+        biorhythms = calculate_biorhythms(birth_date, target_date)
 
     if task_type == "intellectual":
         activity = biorhythms["intellectual"]

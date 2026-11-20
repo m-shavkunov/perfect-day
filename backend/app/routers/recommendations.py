@@ -1,3 +1,4 @@
+
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
@@ -7,6 +8,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.task import Task
 from app.core.security import get_current_user
+from app.services.biorhythm import calculate_biorhythms
 from app.services.recommendation import generate_recommendation
 from app.schemas.recommendation import RecommendationResponse
 
@@ -32,6 +34,11 @@ def get_recommendations(
         .all()
     )
 
+    biorhythms = calculate_biorhythms(
+        current_user.birth_date,
+        target_date
+    )
+
     recommendations = []
 
     for task in tasks:
@@ -39,7 +46,8 @@ def get_recommendations(
             task_type=task.type,
             birth_date=current_user.birth_date,
             target_date=target_date,
-            chronotype=current_user.chronotype
+            chronotype=current_user.chronotype,
+            biorhythms=biorhythms
         )
 
         recommendations.append({
