@@ -68,7 +68,7 @@ function navigate(event) {
   <div class="chart-view">
     <div
       ref="plotElement"
-      class="chart-plot"
+      class="chart-plot glass-panel glass-panel--inset"
       role="group"
       tabindex="0"
       aria-label="График биоритмов. Выбор дня стрелками влево и вправо, первого и последнего дня клавишами Home и End. Точные значения доступны под графиком и в таблице."
@@ -150,7 +150,7 @@ function navigate(event) {
 
 <style scoped>
 .chart-view { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 250px; }
-.chart-plot { flex: 1; position: relative; min-width: 0; min-height: 160px; background: rgb(24 40 22 / 45%); }
+.chart-plot { flex: 1; position: relative; min-width: 0; min-height: 160px; }
 .chart-plot:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .chart-svg { display: block; width: 100%; height: 100%; position: absolute; inset: 0; cursor: crosshair; }
 .chart-axis line { stroke: rgb(255 255 255 / 20%); }

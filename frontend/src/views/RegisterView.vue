@@ -68,7 +68,7 @@ async function submit() {
 
 <template>
   <section class="registration-page" aria-labelledby="registration-title">
-    <div class="registration-panel">
+    <div class="registration-panel glass-panel">
       <h1 id="registration-title">Регистрация</h1>
       <form ref="formElement" class="registration-form" novalidate @submit.prevent="submit">
         <div v-for="field in fields" :key="field.name" class="registration-field">
@@ -109,34 +109,15 @@ async function submit() {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  background:
-    linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)),
-    #fff;
   color: #fff;
   font-family: 'Times New Roman', serif;
   line-height: normal;
-}
-
-.registration-page::before {
-  content: '';
-  position: fixed;
-  inset: 0 auto auto 0;
-  width: 100vw;
-  height: 100svh;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
 }
 
 .registration-panel {
   width: min(100%, 1282px);
   min-height: calc(100svh - var(--page-top));
   padding: 15px clamp(20px, 7.847223vw, 113px) 8px;
-  background: rgb(138 140 137 / 20%);
-  /* Approximate Figma's glass effect without changing the panel's bounds. */
-  backdrop-filter: blur(1px);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
   text-align: center;
 }
 

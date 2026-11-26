@@ -26,6 +26,21 @@ beforeEach(() => {
 
 after(() => { globalThis.fetch = originalFetch })
 
+test('offline requests fail before sending credentials or a mutation', async t => {
+  const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  t.after(() => {
+    if (navigator) Object.defineProperty(globalThis, 'navigator', navigator)
+    else delete globalThis.navigator
+  })
+  let calls = 0
+  globalThis.fetch = async () => { calls++; return json(user) }
+  await assert.rejects(signIn(credentials), /Нет подключения/)
+  await assert.rejects(apiRequest('/settings/', { method: 'PUT', body: {}, token: 'test-token' }), /Нет подключения/)
+  assert.equal(calls, 0)
+  assert.equal(stored.size, 0)
+})
+
 test('registration sends only supported fields with the server birth_date name', async () => {
   globalThis.fetch = async (url, options) => {
     assert.equal(url, '/api/auth/register')

@@ -6,6 +6,13 @@ export class ApiError extends Error {
   }
 }
 
+export class NetworkError extends ApiError {
+  constructor(message) {
+    super(message)
+    this.name = 'NetworkError'
+  }
+}
+
 function errorMessage(status, detail, path) {
   if (status === 401) return path === '/auth/login'
     ? 'Неверный email или пароль.'
@@ -21,6 +28,10 @@ function errorMessage(status, detail, path) {
 }
 
 export async function apiRequest(path, { method = 'GET', body, token, query, signal } = {}) {
+  if (signal?.aborted) throw new DOMException('Запрос отменён.', 'AbortError')
+  if (globalThis.navigator?.onLine === false) {
+    throw new NetworkError('Нет подключения. Повторите действие после восстановления сети.')
+  }
   const controller = new AbortController()
   const abortRequest = () => controller.abort()
   signal?.addEventListener('abort', abortRequest, { once: true })
@@ -30,7 +41,6 @@ export async function apiRequest(path, { method = 'GET', body, token, query, sig
   if (token) headers.Authorization = `Bearer ${token}`
 
   try {
-    if (signal?.aborted) throw new DOMException('Запрос отменён.', 'AbortError')
     const search = new URLSearchParams()
     for (const [name, value] of Object.entries(query || {})) {
       if (value !== undefined && value !== null) search.set(name, value)
@@ -53,8 +63,8 @@ export async function apiRequest(path, { method = 'GET', body, token, query, sig
   } catch (error) {
     if (signal?.aborted) throw new DOMException('Запрос отменён.', 'AbortError')
     if (error instanceof ApiError) throw error
-    if (controller.signal.aborted) throw new ApiError('Сервер не ответил за 10 секунд. Попробуйте ещё раз.')
-    throw new ApiError('Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз.')
+    if (controller.signal.aborted) throw new NetworkError('Сервер не ответил за 10 секунд. Попробуйте ещё раз.')
+    throw new NetworkError('Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз.')
   } finally {
     clearTimeout(timeout)
     signal?.removeEventListener('abort', abortRequest)

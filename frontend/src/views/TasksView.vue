@@ -2,7 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppNavigation from '../components/AppNavigation.vue'
+import TaskTypeIcon from '../components/TaskTypeIcon.vue'
+import mobileDivider from '../assets/mobile-divider.svg'
 import { auth, signOut } from '../state/auth.js'
+import { isOnline } from '../state/connection.js'
 import { createTasksState } from '../state/tasks.js'
 import { maxTaskDuration, prepareTask, taskFormValues, taskPriorities, taskStatuses, taskTypes } from '../utils/tasks.js'
 
@@ -22,10 +25,9 @@ const filter = ref('')
 const form = reactive(taskFormValues())
 const errors = ref({})
 const editing = ref(null)
-const formOpen = ref(false)
+const expandedTasks = reactive(new Set())
 const errorTarget = ref('list')
 const formElement = ref(null)
-const formToggle = ref(null)
 const titleInput = ref(null)
 const shownTasks = computed(() => filter.value ? state.items.filter(task => task.status === filter.value) : state.items)
 const failedDeleteTask = computed(() => state.items.find(task => task.id === state.failedDeleteId))
@@ -33,16 +35,18 @@ const deadlineFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', t
 
 onMounted(() => {
   load()
-  if (route.query.new === '1') toggleForm()
+  if (route.query.new === '1') focusTaskForm()
 })
 onBeforeUnmount(dispose)
 
-async function toggleForm() {
-  formOpen.value = !formOpen.value
-  if (formOpen.value) {
-    await nextTick()
-    titleInput.value?.focus()
-  }
+async function focusTaskForm() {
+  await nextTick()
+  titleInput.value?.focus()
+}
+
+function toggleTask(id) {
+  if (expandedTasks.has(id)) expandedTasks.delete(id)
+  else expandedTasks.add(id)
 }
 
 function resetForm() {
@@ -58,9 +62,7 @@ async function editTask(task) {
   state.error = ''
   state.message = ''
   Object.assign(form, taskFormValues(task))
-  formOpen.value = true
-  await nextTick()
-  titleInput.value?.focus()
+  await focusTaskForm()
 }
 
 async function cancelEdit() {
@@ -95,10 +97,7 @@ async function saveTask() {
 
   if (!original && filter.value && filter.value !== 'planned') filter.value = ''
   resetForm()
-  formOpen.value = false
-  await nextTick()
-  if (formToggle.value?.offsetParent) formToggle.value.focus()
-  else titleInput.value?.focus()
+  await focusTaskForm()
 }
 
 async function changeStatus(task) {
@@ -132,92 +131,7 @@ async function cancelFailedDeletion() {
 <template>
   <section class="tasks-page" aria-labelledby="tasks-title">
     <div class="tasks-layout">
-      <div class="tasks-sidebar">
-        <AppNavigation class="tasks-navigation" />
-        <button
-          ref="formToggle" class="form-toggle" type="button" :aria-expanded="formOpen"
-          aria-controls="task-form-panel" @click="toggleForm"
-        >{{ formOpen ? 'Свернуть форму' : editing ? 'Продолжить редактирование' : 'Добавить задачу' }}</button>
-
-        <section
-          id="task-form-panel" class="task-form-panel glass-panel" :class="{ 'task-form-panel--open': formOpen }"
-          aria-labelledby="task-form-title" tabindex="0"
-        >
-          <h2 id="task-form-title">{{ editing ? 'Редактировать задачу' : 'Добавить задачу' }}</h2>
-          <form ref="formElement" novalidate @submit.prevent="saveTask">
-            <fieldset :disabled="state.busy">
-              <div class="task-field">
-                <label for="task-title">Название задачи</label>
-                <input
-                  id="task-title" ref="titleInput" v-model="form.title" name="title" required
-                  :aria-invalid="Boolean(errors.title)" :aria-describedby="errors.title ? 'task-title-error' : undefined"
-                  @input="delete errors.title"
-                />
-                <span v-if="errors.title" id="task-title-error" class="field-error">{{ errors.title }}</span>
-              </div>
-              <div class="form-pair">
-                <div class="task-field">
-                  <label for="task-type">Тип задачи</label>
-                  <select
-                    id="task-type" v-model="form.type" name="type" required
-                    :aria-invalid="Boolean(errors.type)" :aria-describedby="errors.type ? 'task-type-error' : undefined"
-                    @change="delete errors.type"
-                  >
-                    <option value="" disabled>Выберите тип</option>
-                    <option v-for="(label, value) in taskTypes" :key="value" :value="value">{{ label }}</option>
-                  </select>
-                  <span v-if="errors.type" id="task-type-error" class="field-error">{{ errors.type }}</span>
-                </div>
-                <div class="task-field">
-                  <label for="task-duration">Длительность, мин</label>
-                  <input
-                    id="task-duration" v-model="form.duration_min" name="duration_min" type="number"
-                    min="1" :max="maxTaskDuration" step="1" required
-                    :aria-invalid="Boolean(errors.duration_min)" :aria-describedby="errors.duration_min ? 'task-duration-error' : undefined"
-                    @input="delete errors.duration_min"
-                  />
-                  <span v-if="errors.duration_min" id="task-duration-error" class="field-error">{{ errors.duration_min }}</span>
-                </div>
-              </div>
-              <div class="form-pair">
-                <div class="task-field">
-                  <label for="task-priority">Приоритет</label>
-                  <select id="task-priority" v-model="form.priority" name="priority">
-                    <option v-for="(label, value) in taskPriorities" :key="value" :value="value">{{ label }}</option>
-                  </select>
-                </div>
-                <div v-if="editing" class="task-field">
-                  <label for="task-status">Статус</label>
-                  <select id="task-status" v-model="form.status" name="status">
-                    <option v-for="(label, value) in taskStatuses" :key="value" :value="value">{{ label }}</option>
-                  </select>
-                </div>
-              </div>
-              <div class="task-field">
-                <label for="task-deadline">Срок <span class="optional">(необязательно)</span></label>
-                <input
-                  id="task-deadline" v-model="form.deadline" name="deadline" type="datetime-local"
-                  :aria-invalid="Boolean(errors.deadline)" :aria-describedby="errors.deadline ? 'task-deadline-error' : undefined"
-                  @input="delete errors.deadline"
-                />
-                <span v-if="errors.deadline" id="task-deadline-error" class="field-error">{{ errors.deadline }}</span>
-              </div>
-              <div class="task-field">
-                <label for="task-description">Описание <span class="optional">(необязательно)</span></label>
-                <textarea id="task-description" v-model="form.description" name="description" rows="3"></textarea>
-              </div>
-              <p v-if="state.error && errorTarget === 'form'" class="feedback feedback--error" role="alert">{{ state.error }}</p>
-              <div class="form-actions">
-                <button type="submit" :disabled="state.listStatus !== 'success'">
-                  {{ state.busy ? 'Подождите…' : editing ? 'Сохранить изменения' : 'Создать задачу' }}
-                </button>
-                <button v-if="editing" class="secondary" type="button" @click="cancelEdit">Отмена</button>
-              </div>
-            </fieldset>
-          </form>
-        </section>
-      </div>
-
+      <AppNavigation class="tasks-navigation" />
       <section class="task-list-panel glass-panel" aria-labelledby="tasks-title" :aria-busy="state.listStatus === 'loading'">
         <h1 id="tasks-title">Список задач</h1>
         <div class="task-filter">
@@ -231,10 +145,10 @@ async function cancelFailedDeletion() {
           <p>{{ state.error }}</p>
           <template v-if="failedDeleteTask?.status === 'planned'">
             <p>Можно отменить задачу «{{ failedDeleteTask.title }}». Она останется в списке со статусом «Отменено» и не попадёт в новые расписания.</p>
-            <button type="button" :disabled="state.busy" @click="cancelFailedDeletion">Отменить задачу</button>
+            <button type="button" :disabled="!isOnline || state.busy" @click="cancelFailedDeletion">Отменить задачу</button>
           </template>
         </div>
-        <p v-if="state.message" class="feedback" role="status">{{ state.message }}</p>
+        <p v-if="state.message && errorTarget === 'list'" class="feedback" role="status">{{ state.message }}</p>
         <p v-if="state.listStatus === 'loading'" class="feedback" role="status">Загрузка задач…</p>
         <div v-else-if="state.listStatus === 'error'" class="feedback feedback--error">
           <p role="alert">{{ state.listError }}</p>
@@ -245,30 +159,124 @@ async function cancelFailedDeletion() {
         </p>
         <ul v-else class="task-list" tabindex="0" aria-label="Задачи выбранного статуса">
           <li v-for="task in shownTasks" :key="task.id" class="task-card" :class="{ 'task-card--done': task.status === 'done', 'task-card--cancelled': task.status === 'cancelled' }">
-            <div class="task-info">
-              <h2>{{ task.title }}</h2>
-              <p v-if="task.description" class="task-description">{{ task.description }}</p>
-              <ul class="task-details" aria-label="Параметры задачи">
-                <li>{{ taskTypes[task.type] }}</li>
-                <li>{{ task.duration_min }} мин</li>
-                <li>Приоритет: {{ taskPriorities[task.priority].toLowerCase() }}</li>
-                <li :class="{ 'task-status--done': task.status === 'done', 'task-status--cancelled': task.status === 'cancelled' }">
-                  <span v-if="task.status === 'done'" aria-hidden="true">✓ </span>
-                  <span v-else-if="task.status === 'cancelled'" aria-hidden="true">× </span>
-                  {{ taskStatuses[task.status] }}
-                </li>
-                <li v-if="task.deadline">Срок: <time :datetime="task.deadline">{{ deadlineFormat.format(new Date(task.deadline)) }}</time></li>
-              </ul>
-            </div>
-            <div class="card-actions" role="group" :aria-label="'Действия для задачи «' + task.title + '»'">
-              <button type="button" :disabled="state.busy" @click="editTask(task)">Редактировать</button>
-              <button type="button" :disabled="state.busy" @click="deleteTask(task)">Удалить</button>
-              <button v-if="task.status !== 'cancelled'" type="button" :disabled="state.busy" @click="changeStatus(task)">
-                {{ task.status === 'done' ? 'Вернуть в план' : 'Выполнить' }}
+            <h2 class="task-mobile-heading">
+              <button
+                class="task-card-toggle" type="button" :aria-expanded="expandedTasks.has(task.id)"
+                :aria-controls="'task-details-' + task.id" @click="toggleTask(task.id)"
+              >
+                <span>{{ task.title }}</span>
+                <span class="card-caret" aria-hidden="true">⌄</span>
               </button>
+            </h2>
+            <div :id="'task-details-' + task.id" class="task-card-body" :class="{ 'task-card-body--open': expandedTasks.has(task.id) }">
+              <div class="task-info">
+                <h2 class="task-desktop-heading">{{ task.title }}</h2>
+                <p v-if="task.description" class="task-description">{{ task.description }}</p>
+                <ul class="task-details" aria-label="Параметры задачи">
+                  <li class="task-type-badge"><TaskTypeIcon :type="task.type" />{{ taskTypes[task.type] }}</li>
+                  <li>{{ task.duration_min }} мин</li>
+                  <li>Приоритет: {{ taskPriorities[task.priority].toLowerCase() }}</li>
+                  <li :class="{ 'task-status--done': task.status === 'done', 'task-status--cancelled': task.status === 'cancelled' }">
+                    <span v-if="task.status === 'done'" aria-hidden="true">✓ </span>
+                    <span v-else-if="task.status === 'cancelled'" aria-hidden="true">× </span>
+                    {{ taskStatuses[task.status] }}
+                  </li>
+                  <li v-if="task.deadline">Срок: <time :datetime="task.deadline">{{ deadlineFormat.format(new Date(task.deadline)) }}</time></li>
+                </ul>
+              </div>
+              <div class="card-actions" role="group" :aria-label="'Действия для задачи «' + task.title + '»'">
+                <button type="button" :disabled="state.busy" @click="editTask(task)">Редактировать</button>
+                <button type="button" :disabled="!isOnline || state.busy" @click="deleteTask(task)">Удалить</button>
+                <button v-if="task.status !== 'cancelled'" type="button" :disabled="!isOnline || state.busy" @click="changeStatus(task)">
+                  {{ task.status === 'done' ? 'Вернуть в план' : 'Выполнить' }}
+                </button>
+              </div>
             </div>
           </li>
         </ul>
+      </section>
+
+      <section
+        id="task-form-panel" class="task-form-panel glass-panel"
+        aria-labelledby="task-form-title" tabindex="0"
+      >
+        <div class="tasks-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
+        <h2 id="task-form-title">{{ editing ? 'Редактировать задачу' : 'Добавить задачу' }}</h2>
+        <p v-if="state.message && errorTarget === 'form'" class="feedback" role="status">{{ state.message }}</p>
+        <form ref="formElement" novalidate @submit.prevent="saveTask">
+          <fieldset :disabled="state.busy">
+            <div class="task-field">
+              <label for="task-title">Название задачи</label>
+              <input
+                id="task-title" ref="titleInput" v-model="form.title" name="title" required
+                :aria-invalid="Boolean(errors.title)" :aria-describedby="errors.title ? 'task-title-error' : undefined"
+                @input="delete errors.title"
+              />
+              <span v-if="errors.title" id="task-title-error" class="field-error">{{ errors.title }}</span>
+            </div>
+            <div class="task-field">
+              <label for="task-duration">Длительность, мин</label>
+              <input
+                id="task-duration" v-model="form.duration_min" name="duration_min" type="number"
+                min="1" :max="maxTaskDuration" step="1" required
+                :aria-invalid="Boolean(errors.duration_min)" :aria-describedby="errors.duration_min ? 'task-duration-error' : undefined"
+                @input="delete errors.duration_min"
+              />
+              <span v-if="errors.duration_min" id="task-duration-error" class="field-error">{{ errors.duration_min }}</span>
+            </div>
+            <fieldset class="task-type-picker">
+              <legend>Тип задачи</legend>
+              <div class="task-type-options">
+                <label v-for="(label, value) in taskTypes" :key="value" class="task-type-option" :title="label">
+                  <input
+                    v-model="form.type" type="radio" name="type" :value="value" required
+                    :aria-invalid="Boolean(errors.type)" :aria-describedby="errors.type ? 'task-type-error' : undefined"
+                    @change="delete errors.type"
+                  />
+                  <TaskTypeIcon :type="value" picker />
+                  <span class="visually-hidden">{{ label }}</span>
+                </label>
+              </div>
+              <span v-if="errors.type" id="task-type-error" class="field-error">{{ errors.type }}</span>
+              <span v-else-if="form.type" class="selected-task-type">{{ taskTypes[form.type] }}</span>
+            </fieldset>
+            <div class="form-pair">
+              <div class="task-field">
+                <label for="task-priority">Приоритет</label>
+                <select id="task-priority" v-model="form.priority" name="priority">
+                  <option v-for="(label, value) in taskPriorities" :key="value" :value="value">{{ label }}</option>
+                </select>
+              </div>
+              <div v-if="editing" class="task-field">
+                <label for="task-status">Статус</label>
+                <select id="task-status" v-model="form.status" name="status">
+                  <option v-for="(label, value) in taskStatuses" :key="value" :value="value">{{ label }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="task-field">
+              <label for="task-deadline">Срок <span class="optional">(необязательно)</span></label>
+              <input
+                id="task-deadline" v-model="form.deadline" name="deadline" type="datetime-local"
+                :aria-invalid="Boolean(errors.deadline)" :aria-describedby="errors.deadline ? 'task-deadline-error' : undefined"
+                @input="delete errors.deadline"
+              />
+              <span v-if="errors.deadline" id="task-deadline-error" class="field-error">{{ errors.deadline }}</span>
+            </div>
+            <div class="task-field">
+              <label for="task-description">Описание <span class="optional">(необязательно)</span></label>
+              <textarea id="task-description" v-model="form.description" name="description" rows="3"></textarea>
+            </div>
+            <p v-if="state.error && errorTarget === 'form'" class="feedback feedback--error" role="alert">{{ state.error }}</p>
+            <div class="form-actions">
+              <button type="submit" :disabled="!isOnline || state.listStatus !== 'success'">
+                {{ state.busy ? 'Подождите…' : editing ? 'Сохранить изменения' : 'Создать задачу' }}
+              </button>
+              <button v-if="editing" class="secondary" type="button" @click="cancelEdit">Отмена</button>
+            </div>
+          </fieldset>
+        </form>
+        <div class="tasks-mobile-divider tasks-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
       </section>
     </div>
   </section>
@@ -280,32 +288,24 @@ async function cancelFailedDeletion() {
   isolation: isolate;
   width: 100%;
   min-height: 100svh;
-  background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff;
   color: #fff;
   font: 20px/1.3 'Times New Roman', serif;
   --panel-green: #4e624a;
   --control-green: #40523d;
 }
-.tasks-page::before {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
-  content: '';
-}
 .tasks-layout {
   display: grid;
-  grid-template-columns: minmax(0, 476fr) minmax(0, 869fr);
-  gap: 34px;
-  max-width: 1440px;
+  grid-template: 'navigation list' calc(30px + var(--app-navigation-height)) 'form list' 1fr / var(--desktop-layout-columns);
+  gap: var(--navigation-content-gap) var(--desktop-layout-column-gap);
+  max-width: var(--desktop-layout-width);
   margin: 0 auto;
-  padding: 31px 31px 0 30px;
+  padding-block: 31px 0;
+  padding-inline: var(--desktop-layout-padding-inline);
 }
-.glass-panel { background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 .tasks-navigation {
-  margin: 30px auto var(--navigation-content-gap);
+  grid-area: navigation;
+  align-self: end;
+  justify-self: center;
 }
 button, input, select, textarea {
   min-width: 0;
@@ -323,8 +323,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline: 2px solid #fff;
   outline-offset: 3px;
 }
-.form-toggle { display: none; }
 .task-form-panel {
+  grid-area: form;
   min-height: max(680px, calc(100svh - 61px - var(--app-navigation-height) - var(--navigation-content-gap)));
   padding: 30px clamp(20px, 2.3vw, 33px);
 }
@@ -338,6 +338,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .task-form-panel h2 { margin-bottom: 30px; }
 fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.task-type-picker { gap: 6px; }
+.task-type-picker legend { padding: 0 0 6px; font-size: 18px; }
+.task-type-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; background: var(--panel-green); padding: 6px; }
+.task-type-option { position: relative; display: grid; place-items: center; min-height: 48px; padding: 3px; cursor: pointer; }
+.task-type-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.task-type-option:has(input:checked) { background: #dfead4; }
+.task-type-option:has(input:focus-visible) { outline: 2px solid #fff; }
+.task-type-option:has(input:disabled) { cursor: not-allowed; }
+.task-type-option:hover:not(:has(input:checked, input:disabled)) { background: #60755a; }
+.selected-task-type { font-size: 17px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tasks-mobile-divider, .task-mobile-heading { display: none; }
 .form-pair { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 12px; }
 .task-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .task-field label, .optional { font-size: 18px; }
@@ -362,6 +374,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 }
 .form-actions .secondary { min-height: 44px; background: var(--control-green); font-size: 18px; }
 .task-list-panel {
+  grid-area: list;
   min-width: 0;
   min-height: calc(100svh - 31px);
   padding: 30px clamp(20px, 2.1vw, 30px) 40px;
@@ -390,14 +403,11 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .task-list, .task-details { padding: 0; list-style: none; }
 .task-list { display: grid; grid-auto-rows: max-content; gap: 28px; margin: 0; }
 .task-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px 20px;
   min-height: 197px;
   padding: 24px clamp(16px, 2.45vw, 35px);
   background: var(--panel-green);
 }
+.task-card-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px 20px; }
 .task-info { min-width: 0; overflow-wrap: anywhere; }
 .task-card--done { background: #3f513d; box-shadow: inset 4px 0 #c7d8b8; }
 .task-card--done .task-info h2 { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: #dbe7d1; }
@@ -407,42 +417,67 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .task-description { margin: 10px 0 0; font-size: 18px; white-space: pre-wrap; }
 .task-details { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; font-size: 17px; }
 .task-details li { max-width: 100%; padding: 4px 8px; background: var(--control-green); }
+.task-details .task-type-badge { display: flex; align-items: center; gap: 6px; background: #dfead4; color: #253b2c; }
 .task-details .task-status--done { background: #dfead4; color: #283f28; font-weight: 700; }
 .task-details .task-status--cancelled { background: #d4d8cf; color: #363c31; font-weight: 700; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .card-actions button { min-height: 56px; font-size: clamp(17px, 1.45vw, 21px); }
 .task-form-panel:focus-visible, .task-list:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 
 @media (min-width: 901px) {
-  .tasks-layout { height: 100svh; grid-template-rows: minmax(0, 1fr); }
-  .tasks-sidebar { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-  .task-form-panel { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .tasks-layout { height: 100svh; grid-template-rows: calc(30px + var(--app-navigation-height)) minmax(0, 1fr); }
+  .task-form-panel { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .task-list-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .task-list-panel h1, .task-filter, .feedback { flex: none; }
   .task-list { flex: 1; min-height: 0; align-content: start; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 }
 
 @media (max-width: 1220px) {
-  .task-card { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .task-card { min-height: 0; }
+  .task-card-body { grid-template-columns: minmax(0, 1fr); }
   .form-pair { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
-  .tasks-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px 16px; }
-  .tasks-navigation { margin: 0 0 var(--navigation-content-gap); }
-  .form-toggle { display: block; width: 100%; background: var(--panel-green); }
-  .task-form-panel { display: none; min-height: 0; margin-top: 12px; padding: 20px; }
-  .task-form-panel--open { display: block; }
+  .tasks-layout {
+    --mobile-gutter: clamp(12px, 5.34vw, 22px);
+    grid-template: 'navigation' auto 'list' auto 'form' auto / minmax(0, 1fr);
+    gap: 0;
+    padding: 0 var(--mobile-gutter) 24px;
+  }
+  .tasks-navigation { width: auto; margin: 0 calc(-1 * var(--mobile-gutter)) 29px; justify-self: stretch; }
+  .task-form-panel, .task-list-panel { min-height: 0; padding: 16px; box-shadow: none; border-inline: 1px solid rgb(255 255 255 / 20%); }
+  .task-form-panel { padding-bottom: 28px; border-bottom: 1px solid rgb(255 255 255 / 20%); }
+  .tasks-mobile-divider { display: grid; justify-content: center; overflow: hidden; margin: 0 0 30px; }
+  .tasks-mobile-divider--bottom { margin: 24px 0 0; }
   .form-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .task-list-panel { min-height: 0; padding: 16px; }
-  .task-list-panel h1 { min-height: 58px; }
-  .task-filter { margin: 16px 0 20px; gap: 12px; }
+  .task-list-panel { border-top: 1px solid rgb(255 255 255 / 20%); }
+  .task-list-panel h1 { min-height: 0; padding: 0; background: transparent; }
+  .task-filter { margin: 16px 0 20px; gap: 12px; grid-template-columns: auto minmax(0, 1fr); }
   .task-filter select { min-height: 50px; }
-  .task-list { gap: 14px; max-height: clamp(360px, 65svh, 600px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-  .card-actions button { min-height: 44px; }
+  .task-list { gap: 24px; max-height: clamp(340px, 58svh, 530px); overflow: auto; overscroll-behavior: contain; }
+  .task-card { padding: 0; }
+  .task-mobile-heading { display: block; margin: 0; font-weight: 400; }
+  .task-card-toggle {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    min-height: 124px;
+    padding: 16px 32px;
+    background: transparent;
+    font-size: clamp(23px, 7vw, 30px);
+    overflow-wrap: anywhere;
+  }
+  .task-card--done .task-card-toggle span:first-child, .task-card--cancelled .task-card-toggle span:first-child { text-decoration: line-through; }
+  .card-caret { position: absolute; right: 10px; bottom: 6px; font-size: 26px; line-height: 1; }
+  .task-card-toggle[aria-expanded='true'] .card-caret { rotate: 180deg; }
+  .task-card-toggle:focus-visible { outline-offset: -3px; }
+  .task-desktop-heading, .task-card-body { display: none; }
+  .task-card-body--open { display: grid; padding: 0 14px 14px; }
+  .card-actions button { flex: 1 1 auto; min-height: 44px; }
 }
 @media (max-width: 420px) {
   .form-pair { grid-template-columns: minmax(0, 1fr); }
   .task-filter { grid-template-columns: auto minmax(0, 1fr); font-size: 20px; }
-  .task-card { padding: 16px; }
 }
 </style>

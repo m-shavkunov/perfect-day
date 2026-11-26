@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { registrationDraft } from '../state/registration'
 import { registerAccount } from '../api/auth.js'
 import { auth, signIn } from '../state/auth.js'
+import { isOnline } from '../state/connection.js'
 
 const router = useRouter()
 const formElement = ref(null)
@@ -103,7 +104,7 @@ async function submit() {
 
 <template>
   <section class="onboarding-page" aria-labelledby="profile-title">
-    <div class="profile-panel">
+    <div class="profile-panel glass-panel">
       <h1 id="profile-title">Профиль</h1>
       <form ref="formElement" class="profile-form" :aria-busy="isSubmitting" novalidate @submit.prevent="submit">
         <div class="identity-field">
@@ -179,7 +180,7 @@ async function submit() {
           </div>
           <p v-if="errors.chronotype" id="chronotype-error" class="field-error" aria-live="polite">{{ errors.chronotype }}</p>
         </fieldset>
-        <button class="profile-submit" type="submit" :disabled="isSubmitting">{{ isSubmitting ? (accountCreated ? 'Входим…' : 'Создаём аккаунт…') : 'Продолжить' }}</button>
+        <button class="profile-submit" type="submit" :disabled="!isOnline || isSubmitting">{{ isSubmitting ? (accountCreated ? 'Входим…' : 'Создаём аккаунт…') : 'Продолжить' }}</button>
         <p v-if="notice" class="profile-notice" role="alert">{{ notice }}</p>
       </form>
       <RouterLink v-if="!isSubmitting" class="back-link" to="/register">Назад к регистрации</RouterLink>
@@ -198,28 +199,14 @@ async function submit() {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff;
   color: #fff;
   font-family: 'Times New Roman', serif;
   line-height: normal;
-}
-.onboarding-page::before {
-  content: '';
-  position: fixed;
-  inset: 0 auto auto 0;
-  width: 100vw;
-  height: 100svh;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
 }
 .profile-panel {
   width: min(100%, 1282px);
   min-height: calc(100svh - var(--page-top));
   padding: 27px clamp(20px, 7.847223vw, 113px) 4px;
-  background: rgb(138 140 137 / 20%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
   text-align: center;
 }
 h1 { margin: 0; font-size: clamp(30px, 3.333334vw, 48px); font-weight: 400; line-height: 55px; }

@@ -2,6 +2,7 @@
 import { nextTick, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { auth, signIn } from '../state/auth.js'
+import { isOnline } from '../state/connection.js'
 
 const router = useRouter()
 const formElement = ref(null)
@@ -72,7 +73,7 @@ function showRecoveryNotice() {
 
 <template>
   <section class="login-page" aria-labelledby="login-title">
-    <div class="login-panel">
+    <div class="login-panel glass-panel">
       <h1 id="login-title">Вход</h1>
       <form ref="formElement" class="login-form" :aria-busy="isSubmitting" novalidate @submit.prevent="submit">
         <div
@@ -109,7 +110,7 @@ function showRecoveryNotice() {
           </p>
         </div>
         <button class="login-recovery" type="button" :disabled="isSubmitting" @click="showRecoveryNotice">Забыли пароль?</button>
-        <button class="login-submit" type="submit" :disabled="isSubmitting">{{ isSubmitting ? 'Входим…' : 'Войти' }}</button>
+        <button class="login-submit" type="submit" :disabled="!isOnline || isSubmitting">{{ isSubmitting ? 'Входим…' : 'Войти' }}</button>
         <p v-if="notice" class="login-notice" role="alert">{{ notice }}</p>
         <p v-else-if="auth.notice" class="login-notice" role="status">{{ auth.notice }}</p>
       </form>
@@ -129,30 +130,15 @@ function showRecoveryNotice() {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff;
   color: #fff;
   font-family: 'Times New Roman', serif;
   line-height: normal;
-}
-
-.login-page::before {
-  content: '';
-  position: fixed;
-  inset: 0 auto auto 0;
-  width: 100vw;
-  height: 100svh;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
 }
 
 .login-panel {
   width: min(100%, 1282px);
   min-height: calc(100svh - var(--page-top));
   padding: 21px clamp(20px, 7.847223vw, 113px) 40px;
-  background: rgb(138 140 137 / 20%);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
   text-align: center;
 }
 

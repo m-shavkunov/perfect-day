@@ -6,6 +6,7 @@ import BiorhythmForecast from '../components/BiorhythmForecast.vue'
 import CriticalDaysPanel from '../components/CriticalDaysPanel.vue'
 import RecommendationsPanel from '../components/RecommendationsPanel.vue'
 import { auth, signOut } from '../state/auth.js'
+import { isOnline } from '../state/connection.js'
 import { createDashboardState } from '../state/dashboard.js'
 import { getAdjacentPeriodDate, isDateString, localDateString } from '../utils/dates.js'
 import { formatPercentage } from '../utils/format.js'
@@ -80,6 +81,7 @@ function changeDate(event) {
 }
 
 function selectDate(date) {
+  if (!isOnline.value) return
   dateInput.value = date
   dateError.value = ''
   return setDate(date)
@@ -130,6 +132,7 @@ function selectDate(date) {
               type="date"
               min="0001-01-01"
               max="9999-12-31"
+              :disabled="!isOnline"
               required
               :aria-invalid="Boolean(dateError)"
               :aria-describedby="dateError ? 'dashboard-date-error' : undefined"
@@ -145,6 +148,7 @@ function selectDate(date) {
             :key="period.value"
             type="button"
             :aria-pressed="dashboard.selectedPeriod === period.value"
+            :disabled="!isOnline"
             aria-controls="forecast-results"
             @click="setPeriod(period.value)"
           >
@@ -156,15 +160,15 @@ function selectDate(date) {
             type="button"
             :aria-label="navigation.previousLabel"
             :title="navigation.previousLabel"
-            :disabled="!navigation.previousDate"
+            :disabled="!isOnline || !navigation.previousDate"
             @click="selectDate(navigation.previousDate)"
           >←</button>
-          <button type="button" @click="selectDate(localDateString())">Сегодня</button>
+          <button type="button" :disabled="!isOnline" @click="selectDate(localDateString())">Сегодня</button>
           <button
             type="button"
             :aria-label="navigation.nextLabel"
             :title="navigation.nextLabel"
-            :disabled="!navigation.nextDate"
+            :disabled="!isOnline || !navigation.nextDate"
             @click="selectDate(navigation.nextDate)"
           >→</button>
         </div>
@@ -173,7 +177,7 @@ function selectDate(date) {
           <p v-else-if="allLoaded" role="status">Данные за выбранные даты загружены.</p>
           <div v-if="hasErrors" class="request-errors" role="alert">
             <ul><li v-for="error in requestErrors" :key="error">{{ error }}</li></ul>
-            <button class="retry-button" type="button" :disabled="isLoading" @click="retryFailed">Повторить загрузку</button>
+            <button class="retry-button" type="button" :disabled="!isOnline || isLoading" @click="retryFailed">Повторить загрузку</button>
           </div>
         </div>
         <div id="forecast-results" class="forecast-results" :aria-busy="dashboard.forecast.status === 'loading'">
@@ -199,30 +203,19 @@ function selectDate(date) {
   isolation: isolate;
   width: 100%;
   min-height: 100svh;
-  background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff;
   color: #fff;
   font-family: 'Times New Roman', serif;
   line-height: normal;
 }
-.dashboard-page::before {
-  content: '';
-  position: fixed;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 100svh;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
-}
 .dashboard-layout {
   display: grid;
-  grid-template-columns: minmax(0, 476fr) minmax(0, 869fr);
-  gap: 34px;
+  grid-template-columns: var(--desktop-layout-columns);
+  gap: var(--desktop-layout-column-gap);
   width: 100%;
-  max-width: 1440px;
+  max-width: var(--desktop-layout-width);
   margin: 0 auto;
-  padding: 29px 31px 0 30px;
+  padding-block: 29px 0;
+  padding-inline: var(--desktop-layout-padding-inline);
 }
 .visually-hidden {
   position: absolute;
@@ -234,7 +227,6 @@ function selectDate(date) {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.glass-panel { background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 button {
   padding: 12px;
   border: 0;
@@ -297,8 +289,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   .metrics { font-size: clamp(20px, 2.15vw, 28px); }
 }
 @media (max-width: 900px) {
-  .dashboard-layout { grid-template-columns: minmax(0, 1fr); padding: 24px 16px; gap: 24px; }
-  .dashboard-navigation { margin-top: 0; }
+  .dashboard-layout { grid-template-columns: minmax(0, 1fr); padding: 0 16px 24px; gap: 24px; }
+  .dashboard-navigation { width: auto; margin: 0 -16px; align-self: stretch; }
   .summary-panel { height: auto; min-height: 0; padding: 32px; overflow: visible; }
   .metrics { line-height: 1.5; }
   .forecast-panel { height: auto; min-height: 0; padding: 24px 0 32px; }

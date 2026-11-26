@@ -4,8 +4,9 @@ import { updateSchedule } from '../src/api/schedules.js'
 import { createScheduleState } from '../src/state/schedule.js'
 import {
   draftScheduleItems, firstAvailableStart, readLocalSchedule, saveLocalSchedule,
-  schedulePayload, validateScheduleEdit,
+  schedulePayload, scheduleWorkIssues, validateScheduleEdit,
 } from '../src/utils/scheduleEditing.js'
+import { defaultWorkSettings } from '../src/utils/workSettings.js'
 
 const date = '2026-11-19'
 const options = { userId: 3, token: 'test-token' }
@@ -23,13 +24,14 @@ const storageFixture = () => {
   return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
 }
 
-async function fixture({ plan = originalPlan(), items = tasks(), storage = storageFixture(), onUnauthorized = () => {} } = {}) {
-  const server = { plan, tasks: items, putError: 0, calls: [] }
+async function fixture({ plan = originalPlan(), items = tasks(), settings = defaultWorkSettings, storage = storageFixture(), onUnauthorized = () => {} } = {}) {
+  const server = { plan, tasks: items, settings, putError: 0, calls: [] }
   globalThis.fetch = async (path, request) => {
     const body = request.body && JSON.parse(request.body)
     server.calls.push({ path, method: request.method, body })
     if (path.startsWith('/api/recommendations/')) return json({ date: server.plan.date, items: [] })
     if (path === '/api/tasks/') return json(server.tasks)
+    if (path === '/api/settings/') return json({ id: 1, user_id: 3, ...server.settings })
     if (path === '/api/schedules/8' && request.method === 'GET') return json(server.plan)
     if (path === '/api/schedules/8' && request.method === 'PUT') {
       if (server.putError) return json({}, server.putError)
@@ -40,6 +42,7 @@ async function fixture({ plan = originalPlan(), items = tasks(), storage = stora
   }
   const page = createScheduleState({ userId: 3, getToken: () => options.token, storage, onUnauthorized })
   await page.loadTasks()
+  await page.loadSettings()
   await page.open({ id: 8, date })
   return { page, server, storage }
 }
@@ -234,6 +237,7 @@ test('leaving while save preflight is pending prevents a late PUT', async () => 
   globalThis.fetch = async (path, request) => {
     calls.push(request.method)
     if (path === '/api/tasks/') return json(tasks())
+    if (path === '/api/settings/') return json({ id: 1, user_id: 3, ...defaultWorkSettings })
     return new Promise(resolve => { finish = resolve })
   }
   const saving = page.saveEdit()
@@ -253,4 +257,49 @@ test('an expired save preflight requests authentication and does not offer a loc
   assert.equal(await page.saveEdit(), false)
   assert.equal(expired, 1)
   assert.equal(page.state.localItems, null)
+})
+
+test('changed working hours permit sequential repairs, but only a compatible complete plan can be sent', async () => {
+  const settings = { ...defaultWorkSettings, work_start: '10:00', lunch_start: '12:00', lunch_end: '12:45', break_duration_min: 15 }
+  const { page, server } = await fixture({ settings })
+  assert.equal(scheduleWorkIssues(page.displayedItems.value, settings).length, 2)
+  assert.equal(firstAvailableStart(page.displayedItems.value, 30, settings), '10:10')
+  assert.equal(firstAvailableStart(page.displayedItems.value, 999, settings), '')
+  page.beginEdit()
+  assert.equal(page.placeItem(block(10, '11:30', '12:30'), 'task:10'), false)
+  assert.equal(page.placeItem(block(10, '10:15', '11:15'), 'task:10'), true)
+  assert.match(page.editValidation.value.localReasons[0], /15 мин/)
+  assert.equal(await page.saveEdit(), false)
+  assert.equal(page.placeItem(block(null, '11:15', '11:30'), 'break:2'), true)
+  assert.equal(await page.saveEdit(), true)
+  assert.equal(server.calls.filter(call => call.method === 'PUT').length, 1)
+  assert.deepEqual(scheduleWorkIssues(page.displayedItems.value, settings), [])
+})
+
+test('fresh settings invalidate a manual proposal and retain old historical slots in a browser-only version', async () => {
+  const { page, server } = await fixture({ items: [task(10, 60, 'done'), task(11, 30)] })
+  page.beginEdit()
+  assert.equal(page.removeItem('task:10'), false)
+  assert.equal(page.placeItem(block(11, '14:00', '14:30')), true)
+  server.settings = { ...server.settings, work_start: '10:00', break_duration_min: 15 }
+  assert.equal(await page.saveEdit({ local: true }), false)
+  assert.match(page.state.saveError, /Настройки рабочего дня изменились/)
+  assert.equal(page.dirty.value, true)
+  assert.equal(await page.saveEdit({ local: true }), true)
+  assert.equal(server.calls.some(call => call.method === 'PUT'), false)
+  assert.equal(page.displayedItems.value.find(item => item.task_id === 10).start_time, '09:00:00')
+})
+
+test('a browser-only placement outside the new working day is not restored', async () => {
+  const items = [task(10, 60, 'done'), task(11, 30)]
+  const { page, server, storage } = await fixture({ items })
+  page.beginEdit()
+  assert.equal(page.placeItem(block(11, '14:00', '14:30')), true)
+  assert.equal(await page.saveEdit({ local: true }), true)
+  page.dispose()
+
+  const settings = { ...defaultWorkSettings, work_end: '14:15' }
+  const reopened = await fixture({ plan: server.plan, items, storage, settings })
+  assert.equal(reopened.page.state.localStatus, 'invalid')
+  assert.equal(reopened.page.displayedItems.value.some(item => item.task_id === 11), false)
 })
