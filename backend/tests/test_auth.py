@@ -70,3 +70,60 @@ def test_login_wrong_password(client):
     )
 
     assert response.status_code == 401
+
+
+
+def test_register_user_with_dove_chronotype(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "dove@example.com",
+            "password": "Test12345!",
+            "birth_date": "2004-08-20",
+            "chronotype": "dove"
+        }
+    )
+
+    assert response.status_code == 201
+
+
+def test_register_user_with_invalid_chronotype(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "invalid_chronotype@example.com",
+            "password": "Test12345!",
+            "birth_date": "2004-08-20",
+            "chronotype": "unknown"
+        }
+    )
+
+    assert response.status_code == 422
+
+
+def test_register_user_with_future_birth_date(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "future@example.com",
+            "password": "Test12345!",
+            "birth_date": "2099-01-01",
+            "chronotype": "lark"
+        }
+    )
+
+    assert response.status_code == 422
+
+
+def test_register_user_with_too_long_password(client):
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "long_password@example.com",
+            "password": "A" * 129,
+            "birth_date": "2004-08-20",
+            "chronotype": "lark"
+        }
+    )
+
+    assert response.status_code == 422

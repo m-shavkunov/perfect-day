@@ -187,3 +187,132 @@ def test_user_cannot_access_another_users_task(client, db):
     response = client.get(f"/tasks/{task_id}", headers=another_headers)
 
     assert response.status_code == 404
+
+
+def test_user_cannot_update_another_users_task(client, db):
+    headers = get_auth_headers(db)
+
+    create_response = client.post(
+        "/tasks/",
+        json={
+            "title": "Чужая задача",
+            "type": "routine",
+            "duration_min": 30
+        },
+        headers=headers
+    )
+    task_id = create_response.json()["id"]
+
+    another_user = User(
+        email="another_update_user@example.com",
+        password_hash=hash_password("password123"),
+        birth_date=date(2000, 1, 1),
+        chronotype="lark"
+    )
+    db.add(another_user)
+    db.commit()
+    db.refresh(another_user)
+
+    another_token = create_access_token(another_user.id)
+    another_headers = {"Authorization": f"Bearer {another_token}"}
+
+    response = client.put(
+        f"/tasks/{task_id}",
+        json={"title": "Попытка изменить чужую задачу"},
+        headers=another_headers
+    )
+
+    assert response.status_code == 404
+
+
+def test_user_cannot_delete_another_users_task(client, db):
+    headers = get_auth_headers(db)
+
+    create_response = client.post(
+        "/tasks/",
+        json={
+            "title": "Чужая задача",
+            "type": "routine",
+            "duration_min": 30
+        },
+        headers=headers
+    )
+    task_id = create_response.json()["id"]
+
+    another_user = User(
+        email="another_delete_user@example.com",
+        password_hash=hash_password("password123"),
+        birth_date=date(2000, 1, 1),
+        chronotype="lark"
+    )
+    db.add(another_user)
+    db.commit()
+    db.refresh(another_user)
+
+    another_token = create_access_token(another_user.id)
+    another_headers = {"Authorization": f"Bearer {another_token}"}
+
+    response = client.delete(
+        f"/tasks/{task_id}",
+        headers=another_headers
+    )
+
+    assert response.status_code == 404
+
+
+
+def test_create_task_rejects_whitespace_title(client, db):
+    headers = get_auth_headers(db)
+    response = client.post(
+        "/tasks/",
+        json={
+            "title": "   ",
+            "type": "routine",
+            "duration_min": 30
+        },
+        headers=headers
+    )
+    assert response.status_code == 422
+
+
+def test_create_task_rejects_long_title(client, db):
+    headers = get_auth_headers(db)
+    response = client.post(
+        "/tasks/",
+        json={
+            "title": "A" * 201,
+            "type": "routine",
+            "duration_min": 30
+        },
+        headers=headers
+    )
+    assert response.status_code == 422
+
+
+def test_create_task_rejects_long_description(client, db):
+    headers = get_auth_headers(db)
+    response = client.post(
+        "/tasks/",
+        json={
+            "title": "Test task",
+            "description": "A" * 2001,
+            "type": "routine",
+            "duration_min": 30
+        },
+        headers=headers
+    )
+    assert response.status_code == 422
+
+
+def test_create_task_rejects_duration_over_24_hours(client, db):
+    headers = get_auth_headers(db)
+    response = client.post(
+        "/tasks/",
+        json={
+            "title": "Test task",
+            "type": "routine",
+            "duration_min": 1441
+        },
+        headers=headers
+    )
+    assert response.status_code == 422

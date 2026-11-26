@@ -308,3 +308,172 @@ def test_update_schedule_uses_user_settings(client, db):
     items = response.json()["items"]
     assert items[0]["start_time"] == "10:00:00"
     assert items[1]["end_time"] == "11:15:00"
+
+
+
+def test_user_cannot_update_another_users_schedule(client, db):
+    user, headers = create_user(db)
+    task = create_task(db, user.id)
+
+    schedule_id = create_schedule(client, headers)
+
+    _, another_headers = create_user(
+        db,
+        email="another_update_schedule@example.com"
+    )
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": task.id,
+                    "item_type": "task",
+                    "start_time": "10:00:00",
+                    "end_time": "11:00:00"
+                }
+            ]
+        },
+        headers=another_headers
+    )
+
+    assert response.status_code == 404
+
+
+
+def test_user_cannot_add_another_users_task_to_schedule(client, db):
+    user, headers = create_user(db)
+    schedule_id = create_schedule(client, headers)
+
+    another_user, _ = create_user(
+        db,
+        email="another_task_owner@example.com"
+    )
+    another_task = create_task(db, another_user.id)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": another_task.id,
+                    "item_type": "task",
+                    "start_time": "10:00:00",
+                    "end_time": "11:00:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 404
+
+
+
+def test_update_schedule_rejects_empty_items(client, db):
+    user, headers = create_user(db)
+    create_task(db, user.id)
+
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={"items": []},
+        headers=headers
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_schedule_rejects_invalid_task_id(client, db):
+    user, headers = create_user(db)
+    create_task(db, user.id)
+
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": -1,
+                    "item_type": "task",
+                    "start_time": "10:00:00",
+                    "end_time": "11:00:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 422
+
+
+
+def test_update_schedule_rejects_invalid_time_order(client, db):
+    user, headers = create_user(db)
+    task = create_task(db, user.id)
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": task.id,
+                    "item_type": "task",
+                    "start_time": "11:00:00",
+                    "end_time": "10:00:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_schedule_rejects_task_without_id(client, db):
+    user, headers = create_user(db)
+    create_task(db, user.id)
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": None,
+                    "item_type": "task",
+                    "start_time": "10:00:00",
+                    "end_time": "11:00:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_schedule_rejects_break_with_task_id(client, db):
+    user, headers = create_user(db)
+    task = create_task(db, user.id)
+    schedule_id = create_schedule(client, headers)
+
+    response = client.put(
+        f"/schedules/{schedule_id}",
+        json={
+            "items": [
+                {
+                    "task_id": task.id,
+                    "item_type": "break",
+                    "start_time": "10:00:00",
+                    "end_time": "10:10:00"
+                }
+            ]
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 422

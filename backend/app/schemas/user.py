@@ -1,13 +1,26 @@
-from datetime import date
 
-from pydantic import BaseModel, EmailStr, Field
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+Chronotype = Literal["lark", "owl", "dove"]
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
     birth_date: date
-    chronotype: str
+    chronotype: Chronotype
+
+    @field_validator("birth_date")
+    @classmethod
+    def validate_birth_date(cls, value):
+        if value > date.today():
+            raise ValueError("Birth date cannot be in the future")
+        return value
+
 
 class UserResponse(BaseModel):
     id: int
@@ -17,10 +30,19 @@ class UserResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=128)
+
 
 class UserUpdate(BaseModel):
     birth_date: date
-    chronotype: str
+    chronotype: Chronotype
+
+    @field_validator("birth_date")
+    @classmethod
+    def validate_birth_date(cls, value):
+        if value > date.today():
+            raise ValueError("Birth date cannot be in the future")
+        return value

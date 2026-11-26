@@ -2,14 +2,14 @@
 from datetime import date, datetime, time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ItemType = Literal["task", "break"]
 
 
 class ScheduleItemInput(BaseModel):
-    task_id: int | None = None
+    task_id: int | None = Field(default=None, gt=0)
     item_type: ItemType
     start_time: time
     end_time: time
@@ -53,4 +53,4 @@ class ScheduleGenerateResponse(BaseModel):
 
 
 class ScheduleUpdate(BaseModel):
-    items: list[ScheduleItemInput]
+    items: list[ScheduleItemInput] = Field(min_length=1, max_length=500)

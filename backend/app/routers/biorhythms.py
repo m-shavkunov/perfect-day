@@ -74,6 +74,12 @@ def get_biorhythm_period(
             detail="Start date must be before or equal to end date"
         )
 
+    if (end_date - start_date).days >= 366:
+        raise HTTPException(
+            status_code=400,
+            detail="Date range cannot exceed 366 days"
+        )
+
     results = calculate_biorhythm_period(
         current_user.birth_date,
         start_date,
@@ -93,6 +99,12 @@ def get_critical_days(
         raise HTTPException(
             status_code=400,
             detail="Start date must be before or equal to end date"
+        )
+
+    if (end_date - start_date).days >= 366:
+        raise HTTPException(
+            status_code=400,
+            detail="Date range cannot exceed 366 days"
         )
 
     results = find_critical_days(

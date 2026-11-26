@@ -261,3 +261,108 @@ def test_get_critical_days_without_token(client):
     )
 
     assert response.status_code in (401, 403)
+
+
+def test_biorhythm_cache_is_isolated_between_users(client, db):
+    user1 = User(
+        email="cache_user1@example.com",
+        password_hash="test_hash",
+        birth_date=date(2004, 8, 20),
+        chronotype="lark"
+    )
+
+    user2 = User(
+        email="cache_user2@example.com",
+        password_hash="test_hash",
+        birth_date=date(2000, 1, 1),
+        chronotype="owl"
+    )
+
+    db.add_all([user1, user2])
+    db.commit()
+    db.refresh(user1)
+    db.refresh(user2)
+
+    token1 = create_access_token(user1.id)
+    token2 = create_access_token(user2.id)
+
+    params = {"target_date": "2026-11-27"}
+
+    response1 = client.get(
+        "/biorhythms/",
+        params=params,
+        headers={"Authorization": f"Bearer {token1}"}
+    )
+
+    response2 = client.get(
+        "/biorhythms/",
+        params=params,
+        headers={"Authorization": f"Bearer {token2}"}
+    )
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+
+    assert response1.json() != response2.json()
+
+    cache_entries = db.query(BiorhythmCache).filter(
+        BiorhythmCache.date == date(2026, 11, 27)
+    ).all()
+
+    assert len(cache_entries) == 2
+    assert {entry.user_id for entry in cache_entries} == {
+        user1.id,
+        user2.id
+    }
+
+
+def test_get_biorhythm_period_too_large(client, db):
+    user = User(
+        email="large_period@example.com",
+        password_hash="test_hash",
+        birth_date=date(2004, 8, 20),
+        chronotype="lark"
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id)
+
+    response = client.get(
+        "/biorhythms/period",
+        params={
+            "start_date": "2026-01-01",
+            "end_date": "2027-01-03"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 400
+
+
+def test_get_critical_days_too_large(client, db):
+    user = User(
+        email="large_critical@example.com",
+        password_hash="test_hash",
+        birth_date=date(2004, 8, 20),
+        chronotype="lark"
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.id)
+
+    response = client.get(
+        "/biorhythms/critical-days",
+        params={
+            "start_date": "2026-01-01",
+            "end_date": "2027-01-03"
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 400
