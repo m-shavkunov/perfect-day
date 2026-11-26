@@ -25,7 +25,7 @@ const taskType = type => Object.hasOwn(taskTypes, type) ? taskTypes[type] : { la
     <h3 id="recommendations-title">Рекомендации</h3>
     <p class="recommendations-date">На <time :datetime="selectedDate">{{ dateLabel }}</time></p>
     <div
-      class="recommendations-content"
+      class="recommendations-content glass-panel glass-panel--inset"
       role="region"
       aria-label="Рекомендации для задач на выбранный день"
       tabindex="0"

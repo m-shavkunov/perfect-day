@@ -1,21 +1,24 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, RouterLink, useRoute, useRouter } from 'vue-router'
 import AppNavigation from '../components/AppNavigation.vue'
 import AppDialog from '../components/AppDialog.vue'
+import TaskTypeIcon from '../components/TaskTypeIcon.vue'
+import mobileDivider from '../assets/mobile-divider.svg'
 import scheduleDivider from '../assets/schedule-divider.svg'
 import { auth, signOut } from '../state/auth.js'
+import { isOnline } from '../state/connection.js'
 import { createScheduleState } from '../state/schedule.js'
 import { getAdjacentPeriodDate, isDateString, localDateString } from '../utils/dates.js'
-import { lunch, parseScheduleId, scheduleMinutes, weekDates } from '../utils/schedule.js'
+import { formatScheduleTime, nextScheduledTask, parseScheduleId, scheduleMinutes, weekDates } from '../utils/schedule.js'
 import { taskTypes } from '../utils/tasks.js'
-import { clockFromMinutes, firstAvailableStart, protectedSlotReason, validateScheduleEdit } from '../utils/scheduleEditing.js'
+import { clockFromMinutes, firstAvailableStart, protectedSlotReason, scheduleWorkIssues, validateScheduleEdit } from '../utils/scheduleEditing.js'
 import { adaptationUnavailable } from '../utils/scheduleAdaptation.js'
 
 const route = useRoute()
 const router = useRouter()
 const sessionEnded = ref(false)
-const { state, displayedItems, dirty, changes, editValidation, open, generate, loadTasks, loadAdvice, dispose,
+const { state, displayedItems, dirty, changes, editValidation, open, generate, loadTasks, loadSettings, loadAdvice, dispose,
   beginEdit, placeItem, removeItem, cancelEdit, saveEdit, discardLocal, adaptRemainder } = createScheduleState({
   userId: auth.user.id,
   getToken: () => auth.token,
@@ -36,10 +39,15 @@ const previousWeek = computed(() => getAdjacentPeriodDate(state.date, 'week', -1
 const nextWeek = computed(() => getAdjacentPeriodDate(state.date, 'week', 1))
 const days = computed(() => weekDates(state.date))
 const taskById = computed(() => new Map(state.tasks.items.map(task => [task.id, task])))
-const adviceById = computed(() => new Map(state.advice.items.map(item => [item.task_id, item.recommendation])))
-const slots = computed(() => state.plan
-  ? [...displayedItems.value, lunch].sort((left, right) => scheduleMinutes(left.start_time) - scheduleMinutes(right.start_time))
-  : [])
+const reasonById = computed(() => new Map(state.advice.items.map(item => [item.task_id, item.reason.trim()])))
+const settings = computed(() => state.settings.values)
+const lunch = computed(() => settings.value && ({
+  item_type: 'lunch', id: 'lunch', start_time: settings.value.lunch_start, end_time: settings.value.lunch_end,
+}))
+const slots = computed(() => lunch.value
+  ? [...displayedItems.value, lunch.value].sort((left, right) => scheduleMinutes(left.start_time) - scheduleMinutes(right.start_time))
+  : displayedItems.value)
+const workIssues = computed(() => settings.value ? scheduleWorkIssues(displayedItems.value, settings.value) : [])
 const unplaced = computed(() => {
   const placedIds = new Set(displayedItems.value.map(item => item.task_id))
   const unscheduledIds = state.draft === null && !state.localItems && state.unscheduledIds && new Set(state.unscheduledIds)
@@ -49,14 +57,20 @@ const unplaced = computed(() => {
 const hasScheduledTasks = computed(() => displayedItems.value.some(item => item.item_type === 'task'))
 const timeEditor = ref(null)
 const reviewOpen = ref(false)
+const calendarOpen = ref(false)
+const generationOpen = ref(false)
+const expandedUnplaced = reactive(new Set())
 const clock = ref(new Date())
+const nextTask = computed(() => state.tasks.status === 'ready'
+  ? nextScheduledTask(state.plan, taskById.value, clock.value) : null)
 const busy = computed(() => state.saving || state.adapting)
-const adaptationReason = computed(() => adaptationUnavailable(state.date, clock.value))
+const editsUnavailable = computed(() => !isOnline.value || state.generating || busy.value || state.tasks.status !== 'ready' || state.settings.status !== 'ready')
+const adaptationReason = computed(() => settings.value ? adaptationUnavailable(state.date, clock.value, settings.value) : '')
 const frozenKeys = computed(() => new Set(state.adaptation?.frozenKeys ?? []))
 let clockInterval
 function refreshClock() { clock.value = new Date() }
 const editedTask = computed(() => taskById.value.get(timeEditor.value?.task_id))
-const editedDuration = computed(() => timeEditor.value?.item_type === 'break' ? 10 : editedTask.value?.duration_min ?? 0)
+const editedDuration = computed(() => timeEditor.value?.item_type === 'break' ? settings.value.break_duration_min : editedTask.value?.duration_min ?? 0)
 const candidate = computed(() => timeEditor.value && ({
   item_type: timeEditor.value.item_type, task_id: timeEditor.value.task_id,
   start_time: timeEditor.value.start_time,
@@ -64,9 +78,13 @@ const candidate = computed(() => timeEditor.value && ({
 }))
 const placementError = computed(() => {
   if (!candidate.value) return ''
-  if (scheduleMinutes(candidate.value.start_time) + editedDuration.value > 1080) return 'Блок не помещается до окончания рабочего дня в 18:00.'
+  if (!candidate.value.start_time) return 'Укажите свободное время начала.'
+  if (scheduleMinutes(candidate.value.start_time) + editedDuration.value > scheduleMinutes(settings.value.work_end)) {
+    return 'Блок не помещается до окончания рабочего дня в ' + formatScheduleTime(settings.value.work_end) + '.'
+  }
   const otherItems = state.draft?.filter(item => item.key !== timeEditor.value.key) ?? []
-  return validateScheduleEdit([...otherItems, candidate.value], state.tasks.items, state.plan?.items).errors[0] ?? ''
+  return validateScheduleEdit([...otherItems, candidate.value], state.tasks.items, state.plan?.items,
+    { settings: settings.value, candidate: candidate.value }).errors[0] ?? ''
 })
 
 function routeSelection() {
@@ -82,6 +100,7 @@ watch(() => state.draft, draft => {
 })
 onMounted(() => {
   loadTasks()
+  loadSettings()
   clockInterval = window.setInterval(refreshClock, 30000)
   window.addEventListener('beforeunload', beforeUnload)
   window.addEventListener('focus', refreshClock)
@@ -113,10 +132,11 @@ function cancelDraft() {
 
 function editTime(item) {
   if (!beginEdit()) return
-  const duration = item.item_type === 'break' ? 10 : taskById.value.get(item.task_id)?.duration_min ?? 0
+  const duration = item.item_type === 'break' ? settings.value.break_duration_min : taskById.value.get(item.task_id)?.duration_min ?? 0
   timeEditor.value = {
     key: item.key ?? null, item_type: item.item_type, task_id: item.task_id,
-    start_time: item.start_time?.slice(0, 5) ?? firstAvailableStart(displayedItems.value, duration),
+    start_time: item.start_time ? clockFromMinutes(Math.ceil(scheduleMinutes(item.start_time)))
+      : firstAvailableStart(displayedItems.value, duration, settings.value),
   }
 }
 
@@ -134,7 +154,7 @@ async function replanDay() {
 }
 
 function reloadServer() {
-  if (!canLeaveDraft()) return
+  if (!isOnline.value || !canLeaveDraft()) return
   cancelEdit()
   return open(routeSelection(), { force: true })
 }
@@ -156,7 +176,7 @@ async function handleDateInput(event) {
 
 async function generatePlan() {
   const date = dayFormat.format(asDate(state.date))
-  if (!window.confirm('Сгенерировать расписание на ' + date + '? Если на эту дату уже есть план, он будет заменён.')) return
+  if (!window.confirm('Сгенерировать расписание на ' + date + '? Существующий план на этот день будет заменён целиком.')) return
   const plan = await generate()
   if (plan && route.name === 'schedule') {
     router.replace({ name: 'schedule', query: { date: plan.date, id: String(plan.id) } })
@@ -168,6 +188,11 @@ function slotTitle(slot) {
   if (slot.item_type === 'break') return 'Перерыв'
   return taskById.value.get(slot.task_id)?.title ?? ('Задача №' + slot.task_id)
 }
+
+function toggleUnplaced(id) {
+  if (expandedUnplaced.has(id)) expandedUnplaced.delete(id)
+  else expandedUnplaced.add(id)
+}
 </script>
 
 <template>
@@ -175,24 +200,29 @@ function slotTitle(slot) {
     <div class="schedule-layout">
       <AppNavigation class="schedule-navigation" />
 
-      <section class="schedule-main glass-panel" :class="{ 'schedule-main--editing': state.draft !== null, 'schedule-main--expanded': state.planStatus === 'ready' || state.saveError || state.saveNotice }" aria-labelledby="schedule-title" tabindex="0">
-        <h1 id="schedule-title">Календарь и планирование</h1>
-        <div class="schedule-calendar">
+      <section class="schedule-main glass-panel" :class="{ 'schedule-main--editing': state.draft !== null, 'schedule-main--expanded': state.planStatus === 'ready' || state.settings.status === 'error' || state.saveError || state.saveNotice }" aria-labelledby="schedule-title" tabindex="0">
+        <h1 id="schedule-title">
+          <span class="desktop-schedule-title">Календарь и планирование</span>
+          <button class="mobile-disclosure" type="button" :aria-expanded="calendarOpen" aria-controls="schedule-calendar" @click="calendarOpen = !calendarOpen">
+            Календарь и планирование <span class="disclosure-caret" aria-hidden="true">⌄</span>
+          </button>
+        </h1>
+        <div id="schedule-calendar" class="schedule-calendar" :class="{ 'schedule-calendar--open': calendarOpen }">
           <div class="calendar-controls">
             <p class="month-label">{{ monthFormat.format(asDate(state.date)) }}</p>
             <label class="visually-hidden" for="schedule-date">Дата расписания</label>
             <input
               id="schedule-date" type="date" :value="state.date" min="0001-01-01" max="9999-12-31"
-              :disabled="state.generating || busy" @change="handleDateInput"
+              :disabled="!isOnline || state.generating || busy" @change="handleDateInput"
             />
             <div class="week-controls">
               <button
-                type="button" aria-label="Предыдущая неделя" :disabled="state.generating || busy || !previousWeek"
+                type="button" aria-label="Предыдущая неделя" :disabled="!isOnline || state.generating || busy || !previousWeek"
                 @click="selectDate(previousWeek)"
               >‹</button>
-              <button type="button" :disabled="state.generating || busy" @click="selectDate(localDateString())">Сегодня</button>
+              <button type="button" :disabled="!isOnline || state.generating || busy" @click="selectDate(localDateString())">Сегодня</button>
               <button
-                type="button" aria-label="Следующая неделя" :disabled="state.generating || busy || !nextWeek"
+                type="button" aria-label="Следующая неделя" :disabled="!isOnline || state.generating || busy || !nextWeek"
                 @click="selectDate(nextWeek)"
               >›</button>
             </div>
@@ -201,7 +231,7 @@ function slotTitle(slot) {
             <li v-for="day in days" :key="day">
               <button
                 type="button" :aria-label="dateFormat.format(asDate(day))" :aria-pressed="day === state.date"
-                :disabled="state.generating || busy" @click="selectDate(day)"
+                :disabled="!isOnline || state.generating || busy" @click="selectDate(day)"
               >
                 <span aria-hidden="true">{{ weekdayFormat.format(asDate(day)) }}</span>
                 <time :datetime="day" aria-hidden="true">{{ Number(day.slice(-2)) }}</time>
@@ -210,37 +240,72 @@ function slotTitle(slot) {
           </ul>
         </div>
 
-        <button
-          v-if="state.draft === null" class="generate-button" type="button" :disabled="state.generating || busy || state.planStatus === 'loading'"
-          @click="generatePlan"
-        >{{ state.generating ? 'Составляем расписание…' : 'Сгенерировать расписание' }}</button>
-        <p v-if="state.generationError" class="schedule-feedback error" role="alert">{{ state.generationError }}</p>
+        <div v-if="state.draft === null" class="schedule-generator">
+          <button class="mobile-disclosure" type="button" :aria-expanded="generationOpen" aria-controls="schedule-generation" @click="generationOpen = !generationOpen">
+            Создать интеллектуальное расписание <span class="disclosure-caret" aria-hidden="true">⌄</span>
+          </button>
+          <div id="schedule-generation" class="schedule-generation" :class="{ 'schedule-generation--open': generationOpen }">
+            <button
+              class="generate-button" type="button" :disabled="!isOnline || state.generating || busy || state.planStatus === 'loading' || state.settings.status !== 'ready'"
+              @click="generatePlan"
+            >
+              <span v-if="state.generating">Составляем расписание…</span>
+              <template v-else>
+                <span class="desktop-generate-label">Создать интеллектуальное расписание</span>
+                <span class="mobile-generate-label">Сгенерировать расписание</span>
+              </template>
+            </button>
+            <p v-if="state.generationError" class="schedule-feedback error" role="alert">{{ state.generationError }}</p>
+          </div>
+        </div>
 
-        <section class="schedule-results glass-panel" aria-labelledby="day-title" :aria-busy="state.planStatus === 'loading' || state.generating || busy">
+        <section class="schedule-results glass-panel glass-panel--inset" :class="{ 'schedule-results--mobile-empty': state.planStatus === 'missing' && state.settings.status === 'ready' && !state.planError && !generationOpen }"
+          aria-labelledby="day-title" :aria-busy="state.planStatus === 'loading' || state.generating || busy">
           <h2 id="day-title">{{ state.draft !== null ? 'Черновик на ' : 'Расписание на ' }}<time :datetime="state.date">{{ dayFormat.format(asDate(state.date)) }}</time></h2>
+          <section v-if="state.planStatus === 'ready'" class="next-task" aria-labelledby="next-task-title">
+            <h3 id="next-task-title">Ближайшая задача по серверному плану</h3>
+            <div role="status">
+              <p v-if="nextTask">
+                <time :datetime="nextTask.start_time">{{ formatScheduleTime(nextTask.start_time) }}</time>
+                <span> (Екатеринбург) · {{ slotTitle(nextTask) }}</span>
+              </p>
+              <p v-else-if="state.tasks.status === 'loading'">Проверяем список задач…</p>
+              <p v-else-if="state.tasks.status === 'error'">Не удалось определить ближайшую задачу.</p>
+              <p v-else>На выбранную дату предстоящих задач нет.</p>
+            </div>
+          </section>
+          <p v-if="state.settings.status === 'loading'" class="workday-note" role="status">Загрузка настроек рабочего дня…</p>
+          <div v-else-if="state.settings.status === 'error'" class="schedule-feedback editor-feedback error">
+            <p role="alert">Настройки рабочего дня недоступны. {{ state.settings.error }}</p>
+            <button type="button" @click="loadSettings">Повторить загрузку настроек</button>
+          </div>
+          <div v-if="workIssues.length" class="schedule-feedback editor-feedback" role="status">
+            <p>Некоторые блоки расписания не подходят к текущим настройкам.</p>
+            <ul class="workday-issues"><li v-for="issue in workIssues" :key="issue">{{ issue }}</li></ul>
+          </div>
           <div v-if="state.planStatus === 'ready'" class="schedule-edit-toolbar" aria-label="Редактирование расписания">
             <template v-if="state.draft === null">
-              <button type="button" :disabled="state.generating || busy || state.tasks.status !== 'ready'" @click="beginEdit">Изменить расписание</button>
-              <button type="button" :disabled="state.generating || busy || state.tasks.status !== 'ready' || Boolean(adaptationReason)" aria-describedby="adaptation-availability" @click="replanDay">{{ state.adapting ? 'Пересчитываем…' : 'Перепланировать остаток дня' }}</button>
+              <button type="button" :disabled="editsUnavailable" @click="beginEdit">Изменить расписание</button>
+              <button type="button" :disabled="editsUnavailable || Boolean(adaptationReason)" :aria-describedby="adaptationReason ? 'adaptation-availability' : undefined" @click="replanDay">{{ state.adapting ? 'Пересчитываем…' : 'Перепланировать остаток дня' }}</button>
             </template>
             <template v-else>
               <button v-if="!state.adaptation" type="button" :disabled="busy" @click="editTime({ item_type: 'break', task_id: null })">Добавить перерыв</button>
-              <button v-else type="button" :disabled="busy || Boolean(adaptationReason) || state.saveConflict" @click="replanDay">{{ state.adapting ? 'Пересчитываем…' : 'Пересчитать заново' }}</button>
+              <button v-else type="button" :disabled="!isOnline || busy || Boolean(adaptationReason) || state.saveConflict" @click="replanDay">{{ state.adapting ? 'Пересчитываем…' : 'Пересчитать заново' }}</button>
               <button type="button" :disabled="busy" @click="cancelDraft">Отменить правки</button>
               <button class="primary" type="button" :disabled="busy || !dirty && !state.adaptation || editValidation.errors.length > 0 || state.saveConflict" @click="reviewOpen = true">Проверить и сохранить</button>
             </template>
           </div>
-          <p v-if="state.planStatus === 'ready' && state.draft === null" id="adaptation-availability" class="adaptation-availability">{{ adaptationReason || 'Перерасчёт будущих и неразмещённых задач с текущего времени. Сначала покажем результат.' }}</p>
+          <p v-if="state.planStatus === 'ready' && state.draft === null && adaptationReason" id="adaptation-availability" class="adaptation-availability">{{ adaptationReason }}</p>
           <p v-if="state.adaptation" class="schedule-feedback editor-feedback" role="status">Остаток дня с {{ state.adaptation.from }} · Сохранено блоков без изменений: {{ state.adaptation.frozenCount }}. Не поместилось задач: {{ state.adaptation.unplaced.length }}. Это черновик.</p>
           <div v-if="state.saveError" class="schedule-feedback editor-feedback error" role="alert">
             <p>{{ state.saveError }}</p>
-            <button v-if="state.saveConflict" type="button" :disabled="busy" @click="reloadServer">Загрузить актуальный план</button>
-            <button v-else-if="state.adaptationStale" type="button" :disabled="busy || Boolean(adaptationReason)" @click="replanDay">Пересчитать заново</button>
+            <button v-if="state.saveConflict" type="button" :disabled="!isOnline || busy" @click="reloadServer">Загрузить актуальный план</button>
+            <button v-else-if="state.adaptationStale" type="button" :disabled="!isOnline || busy || Boolean(adaptationReason)" @click="replanDay">Пересчитать заново</button>
           </div>
           <p v-if="state.saveNotice && state.localStatus !== 'saved'" class="schedule-feedback editor-feedback" role="status">{{ state.saveNotice }}</p>
           <div v-if="state.localStatus !== 'none'" class="schedule-feedback editor-feedback local-plan-note" role="status">
             <p v-if="state.localStatus === 'saved'">Локальные правки · только этот браузер. На сервере сохранён исходный план.</p>
-            <p v-else>Локальные правки устарели или не подходят к данным задач. Показан серверный план.</p>
+            <p v-else>Локальные правки устарели или не подходят к текущим задачам и настройкам. Показан серверный план.</p>
             <button type="button" :disabled="busy || state.draft !== null" @click="removeLocalCopy">{{ state.localStatus === 'saved' ? 'Вернуть серверный план' : 'Удалить локальную копию' }}</button>
           </div>
           <p v-if="state.planStatus === 'loading'" class="schedule-feedback" role="status">Загрузка расписания…</p>
@@ -264,10 +329,13 @@ function slotTitle(slot) {
               <li v-for="(slot, index) in slots" :key="slot.key ?? slot.id">
                 <div v-if="index" class="slot-divider" aria-hidden="true"><img :src="scheduleDivider" alt="" /></div>
                 <div class="schedule-slot" :class="{ 'schedule-slot--break': slot.item_type !== 'task' }">
-                  <p class="slot-time"><time :datetime="slot.start_time">{{ slot.start_time.slice(0, 5) }}</time>–<time :datetime="slot.end_time">{{ slot.end_time.slice(0, 5) }}</time></p>
+                  <p class="slot-time"><time :datetime="slot.start_time">{{ formatScheduleTime(slot.start_time) }}</time>–<time :datetime="slot.end_time">{{ formatScheduleTime(slot.end_time) }}</time></p>
                   <div class="slot-info">
-                    <h3>{{ slotTitle(slot) }}</h3>
-                    <p v-if="adviceById.has(slot.task_id)">Рекомендация на день: {{ adviceById.get(slot.task_id) }}</p>
+                    <h3>
+                      <TaskTypeIcon v-if="slot.item_type === 'task'" :type="taskById.get(slot.task_id)?.type" />
+                      <span>{{ slotTitle(slot) }}</span>
+                    </h3>
+                    <p v-if="reasonById.get(slot.task_id)" class="slot-reason">Почему: {{ reasonById.get(slot.task_id) }}</p>
                     <p v-if="slot.item_type === 'task' && state.tasks.status === 'ready' && protectedSlotReason(slot, state.tasks.items)" class="saved-slot-note">{{ protectedSlotReason(slot, state.tasks.items) }}</p>
                     <p v-if="state.adaptation && frozenKeys.has(slot.key)" class="saved-slot-note">Сохранено без изменений.</p>
                     <div v-if="state.draft !== null && !state.adaptation && slot.item_type !== 'lunch' && !protectedSlotReason(slot, state.tasks.items)" class="slot-actions">
@@ -283,8 +351,11 @@ function slotTitle(slot) {
       </section>
 
       <aside class="schedule-unplaced glass-panel" aria-labelledby="unplaced-title">
+        <div class="schedule-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
         <h2 id="unplaced-title">Неразмещённые задачи</h2>
-        <RouterLink class="create-task-link" :to="{ name: 'tasks', query: { new: '1' } }">+ Создать задачу</RouterLink>
+        <RouterLink class="create-task-link" :to="{ name: 'tasks', query: { new: '1' } }">
+          <span aria-hidden="true" class="create-task-plus">+</span> <span>Создать задачу</span>
+        </RouterLink>
         <p v-if="state.tasks.status === 'loading'" class="schedule-feedback" role="status">Загрузка задач…</p>
         <div v-else-if="state.tasks.status === 'error'" class="schedule-feedback error">
           <p role="alert">{{ state.tasks.error }}</p>
@@ -293,21 +364,30 @@ function slotTitle(slot) {
         <p v-else-if="!unplaced.length" class="schedule-feedback" role="status">Нет неразмещённых задач.</p>
         <ul v-else class="unplaced-list" tabindex="0" aria-label="Список неразмещённых задач">
           <li v-for="task in unplaced" :key="task.id">
-            <h3>{{ task.title }}</h3>
-            <p>{{ taskTypes[task.type] }} · {{ task.duration_min }} мин</p>
-            <p v-if="state.adaptation">{{ state.adaptation.unplaced.find(item => item.task_id === task.id)?.reason }}</p>
-            <button v-if="state.planStatus === 'ready' && !state.adaptation" type="button" :disabled="state.generating || busy || state.tasks.status !== 'ready'" @click="editTime({ item_type: 'task', task_id: task.id })">Разместить вручную</button>
+            <h3 class="unplaced-title-desktop">{{ task.title }}</h3>
+            <h3 class="unplaced-title-mobile">
+              <button class="unplaced-toggle" type="button" :aria-expanded="expandedUnplaced.has(task.id)"
+                :aria-controls="'unplaced-details-' + task.id" @click="toggleUnplaced(task.id)">
+                {{ task.title }} <span class="disclosure-caret" aria-hidden="true">⌄</span>
+              </button>
+            </h3>
+            <div :id="'unplaced-details-' + task.id" class="unplaced-details" :class="{ 'unplaced-details--open': expandedUnplaced.has(task.id) }">
+              <p class="unplaced-type"><TaskTypeIcon :type="task.type" /> <span>{{ taskTypes[task.type] }} · {{ task.duration_min }} мин</span></p>
+              <p v-if="state.adaptation">{{ state.adaptation.unplaced.find(item => item.task_id === task.id)?.reason }}</p>
+              <button v-if="state.planStatus === 'ready' && !state.adaptation" type="button" :disabled="editsUnavailable" @click="editTime({ item_type: 'task', task_id: task.id })">Разместить вручную</button>
+            </div>
           </li>
         </ul>
+        <div class="schedule-mobile-divider schedule-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
       </aside>
     </div>
 
-    <AppDialog v-if="timeEditor" :title="timeEditor.item_type === 'break' ? 'Время перерыва' : 'Время задачи'" @close="timeEditor = null">
-      <form class="time-editor" @submit.prevent="applyTime">
+    <AppDialog v-if="timeEditor && settings" :title="timeEditor.item_type === 'break' ? 'Время перерыва' : 'Время задачи'" @close="timeEditor = null">
+      <form class="time-editor" novalidate @submit.prevent="applyTime">
         <p>{{ editedTask?.title ?? 'Перерыв' }} · {{ editedDuration }} мин</p>
         <label for="schedule-slot-start">Начало</label>
-        <input id="schedule-slot-start" v-model="timeEditor.start_time" type="time" min="09:00" max="18:00" step="60" required autofocus :aria-invalid="Boolean(placementError)" aria-describedby="slot-placement-note" />
-        <p>Окончание: <strong>{{ candidate?.end_time || '—' }}</strong>. Обед 13:00–14:00.</p>
+        <input id="schedule-slot-start" v-model="timeEditor.start_time" type="time" :min="clockFromMinutes(Math.ceil(scheduleMinutes(settings.work_start)))" :max="clockFromMinutes(Math.floor(scheduleMinutes(settings.work_end)))" step="60" required autofocus :aria-invalid="Boolean(placementError)" aria-describedby="slot-placement-note" />
+        <p>Окончание: <strong>{{ candidate?.end_time || '—' }}</strong>. Обед {{ formatScheduleTime(settings.lunch_start) }}–{{ formatScheduleTime(settings.lunch_end) }}.</p>
         <p id="slot-placement-note" :class="{ 'dialog-error': placementError }" :role="placementError ? 'alert' : undefined">{{ placementError || 'Изменение добавится в черновик. Остальные блоки сохранят своё время.' }}</p>
         <div class="dialog-actions">
           <button type="button" @click="timeEditor = null">Отмена</button>
@@ -319,7 +399,7 @@ function slotTitle(slot) {
     <AppDialog v-if="reviewOpen" :title="state.adaptation ? 'Перепланирование остатка дня' : 'Проверка правок расписания'" :busy="busy" @close="reviewOpen = false">
       <p>{{ dayFormat.format(asDate(state.date)) }}</p>
       <template v-if="state.adaptation">
-        <p>Перерасчёт с {{ state.adaptation.from }}. Прошедшие блоки, текущая задача и история сохранены. Учтены приоритеты, сроки, обед и десятиминутные перерывы.</p>
+        <p>Перерасчёт с {{ state.adaptation.from }}. Прошедшие блоки, текущая задача и история сохранены. Учтены приоритеты, сроки и настройки рабочего дня.</p>
         <h3>Изменения</h3>
         <p v-if="!changes.length">Расписание уже подходит для остатка дня. Изменений нет.</p>
       </template>
@@ -338,17 +418,18 @@ function slotTitle(slot) {
         </div>
       </template>
       <div v-if="editValidation.localReasons.length" class="local-save-note">
-        <p>Эти блоки остаются в истории без изменений:</p>
+        <p>Некоторые сохранённые блоки нельзя отправить на сервер вместе с правками:</p>
         <ul><li v-for="reason in editValidation.localReasons" :key="reason">{{ reason }}</li></ul>
         <p>Правки можно сохранить только в этом браузере. Они будут отмечены на экране. Серверное расписание останется прежним.</p>
       </div>
       <p v-for="error in editValidation.errors" :key="error" class="dialog-error" role="alert">{{ error }}</p>
       <p v-if="state.saveError" class="dialog-error" role="alert">{{ state.saveError }}</p>
+      <p v-if="!isOnline" class="local-save-note" role="status">Для проверки и сохранения правок нужна сеть.</p>
       <div class="dialog-actions">
         <button type="button" :disabled="busy" @click="reviewOpen = false">Вернуться к черновику</button>
-        <button v-if="state.saveConflict" type="button" :disabled="busy" @click="reloadServer">Загрузить актуальный план</button>
-        <button v-else-if="state.adaptationStale" type="button" :disabled="busy || Boolean(adaptationReason)" @click="replanDay">Пересчитать заново</button>
-        <button v-else class="primary" type="button" :disabled="busy || !dirty || editValidation.errors.length > 0" @click="confirmSave">{{ state.saving ? 'Сохраняем…' : editValidation.localReasons.length ? 'Сохранить в этом браузере' : 'Сохранить расписание' }}</button>
+        <button v-if="state.saveConflict" type="button" :disabled="!isOnline || busy" @click="reloadServer">Загрузить актуальный план</button>
+        <button v-else-if="state.adaptationStale" type="button" :disabled="!isOnline || busy || Boolean(adaptationReason)" @click="replanDay">Пересчитать заново</button>
+        <button v-else class="primary" type="button" :disabled="!isOnline || busy || !dirty || editValidation.errors.length > 0" @click="confirmSave">{{ state.saving ? 'Сохраняем…' : editValidation.localReasons.length ? 'Сохранить в этом браузере' : 'Сохранить расписание' }}</button>
       </div>
     </AppDialog>
   </section>
@@ -360,30 +441,20 @@ function slotTitle(slot) {
   isolation: isolate;
   width: 100%;
   min-height: 100svh;
-  background: linear-gradient(rgb(83 98 66 / 87%), rgb(83 98 66 / 87%)), #fff;
   color: #fff;
   font: 20px/1.3 'Times New Roman', serif;
   --panel-green: #4e624a;
   --control-green: #40523d;
 }
-.schedule-page::before {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: url('../assets/leaves.jpg') center / cover no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
-  content: '';
-}
 .schedule-layout {
   display: grid;
-  grid-template: 'navigation main' calc(32px + var(--app-navigation-height)) 'unplaced main' 1fr / minmax(0, 476fr) minmax(0, 869fr);
-  gap: var(--navigation-content-gap) 34px;
-  max-width: 1440px;
+  grid-template: 'navigation main' calc(32px + var(--app-navigation-height)) 'unplaced main' 1fr / var(--desktop-layout-columns);
+  gap: var(--navigation-content-gap) var(--desktop-layout-column-gap);
+  max-width: var(--desktop-layout-width);
   margin: 0 auto;
-  padding: 29px 31px 0 30px;
+  padding-block: 29px 0;
+  padding-inline: var(--desktop-layout-padding-inline);
 }
-.glass-panel { background: rgb(138 140 137 / 20%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 button, input, .create-task-link {
   min-width: 0;
@@ -453,10 +524,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .week-days span { text-transform: capitalize; }
 .week-days time { font-size: clamp(20px, 2.15vw, 31px); }
 .week-days button[aria-pressed='true'] { background: #354730; box-shadow: inset 0 0 0 1px #fff; }
+.schedule-generator { margin-top: 26px; }
+.mobile-disclosure, .mobile-generate-label, .unplaced-title-mobile, .schedule-mobile-divider { display: none; }
 .generate-button {
   width: 100%;
   min-height: 81px;
-  margin: 26px 0 0;
+  margin: 0;
   background: var(--panel-green);
   font-size: clamp(22px, 2.45vw, 35px);
 }
@@ -464,12 +537,16 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   min-height: 360px;
   margin-top: 31px;
   padding: 24px 26px;
-  background: rgb(78 98 74 / 20%);
 }
 .schedule-results h2 { margin: 0 0 16px; font-size: clamp(20px, 1.9vw, 27px); font-weight: 400; overflow-wrap: anywhere; }
+.next-task { flex: none; margin: 0 0 12px; padding: 10px 12px; background: var(--control-green); font-size: 18px; overflow-wrap: anywhere; }
+.next-task h3 { margin: 0; font: inherit; font-weight: 700; }
+.next-task p { margin: 4px 0 0; }
 .schedule-feedback { margin: 12px 0 0; padding: 12px; background: var(--control-green); overflow-wrap: anywhere; }
 .schedule-feedback p { margin: 0 0 8px; }
 .schedule-feedback.error { background: #693d35; }
+.workday-note { flex: none; margin: 0 0 12px; font-size: 17px; overflow-wrap: anywhere; }
+.workday-issues { margin: 0; padding-inline-start: 22px; }
 .slot-divider { display: flex; align-items: center; height: 5px; overflow: hidden; }
 .slot-divider img { display: block; flex: none; transform: rotate(0.3deg); }
 .schedule-slot {
@@ -481,11 +558,14 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   padding: 16px 4px;
 }
 .schedule-slot--break { min-height: 64px; }
-.slot-time { margin: 0; font-size: clamp(20px, 2.1vw, 30px); font-variant-numeric: tabular-nums; }
+.slot-time { margin: 0; font-size: clamp(20px, 2.1vw, 30px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .slot-info { min-width: 0; overflow-wrap: anywhere; }
 .slot-info h3, .unplaced-list h3 { margin: 0; font-size: clamp(22px, 2.4vw, 34px); font-weight: 400; }
+.slot-info h3 { display: flex; align-items: center; gap: 10px; line-height: 1.15; }
+.slot-info h3 img { background: #dfead4; }
 .schedule-slot--break h3 { font-size: 20px; }
 .slot-info p { margin: 6px 0 0; font-size: 18px; }
+.slot-info .slot-reason { max-width: 65ch; }
 .schedule-unplaced {
   grid-area: unplaced;
   min-width: 0;
@@ -493,8 +573,11 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   padding: 30px clamp(20px, 2.3vw, 33px) 40px;
 }
 .create-task-link {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 99px;
   margin-top: 65px;
   background: var(--panel-green);
@@ -512,6 +595,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   text-align: center;
 }
 .unplaced-list p { margin: 0; }
+.unplaced-details { display: grid; gap: 8px; }
+.unplaced-type { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .schedule-edit-toolbar, .slot-actions, .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .schedule-edit-toolbar { flex: none; margin-bottom: 12px; }
 .schedule-edit-toolbar button, .slot-actions button, .editor-feedback button, .unplaced-list button, .dialog-actions button { min-height: 44px; font-size: 17px; }
@@ -536,7 +621,7 @@ button.primary:not(:disabled):hover { background: #cfdcbe; }
 @media (min-width: 901px) {
   .schedule-layout { height: 100svh; grid-template-rows: calc(32px + var(--app-navigation-height)) minmax(0, 1fr); }
   .schedule-main, .schedule-unplaced, .schedule-results { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  .schedule-main > h1, .schedule-calendar, .generate-button, .schedule-main > .schedule-feedback,
+  .schedule-main > h1, .schedule-calendar, .schedule-generator,
   .schedule-results > h2, .schedule-results > .schedule-feedback,
   .schedule-unplaced > h2, .create-task-link, .schedule-unplaced > .schedule-feedback { flex: none; }
   .schedule-results { flex: 1; }
@@ -547,7 +632,8 @@ button.primary:not(:disabled):hover { background: #cfdcbe; }
 }
 @media (min-width: 901px) and (max-height: 800px) {
   .schedule-calendar { min-height: 0; margin-top: 24px; padding: 16px; }
-  .generate-button { min-height: 56px; margin-top: 16px; font-size: 26px; }
+  .schedule-generator { margin-top: 16px; }
+  .generate-button { min-height: 56px; font-size: 26px; }
   .schedule-results { margin-top: 16px; padding: 16px; }
   .schedule-unplaced { padding: 24px 20px; }
   .create-task-link { min-height: 56px; margin-top: 24px; font-size: 26px; }
@@ -569,19 +655,64 @@ button.primary:not(:disabled):hover { background: #cfdcbe; }
 }
 @media (max-width: 900px) {
   .schedule-layout {
+    --mobile-gutter: clamp(12px, 5.34vw, 22px);
     grid-template: 'navigation' auto 'main' auto 'unplaced' auto / minmax(0, 1fr);
-    gap: var(--navigation-content-gap);
-    padding: 24px 16px;
+    gap: 0;
+    padding: 0 var(--mobile-gutter) 24px;
   }
-  .schedule-main, .schedule-unplaced { min-height: 0; padding: 16px; }
-  .schedule-main h1 { min-height: 58px; }
+  .schedule-navigation { width: auto; margin: 0 calc(-1 * var(--mobile-gutter)) 29px; justify-self: stretch; }
+  .schedule-main, .schedule-unplaced {
+    min-height: 0;
+    padding: 16px;
+    box-shadow: none;
+    border-inline: 1px solid rgb(255 255 255 / 20%);
+  }
+  .schedule-main { border-top: 1px solid rgb(255 255 255 / 20%); }
+  .schedule-unplaced { padding-bottom: 28px; border-bottom: 1px solid rgb(255 255 255 / 20%); }
+  .schedule-main h1 { min-height: 0; padding: 0; }
+  .desktop-schedule-title, .desktop-generate-label, .schedule-results--mobile-empty, .unplaced-title-desktop { display: none; }
+  .mobile-disclosure {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 124px;
+    padding: 12px 32px 16px;
+    background: var(--panel-green);
+    font-size: clamp(23px, 7vw, 30px);
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+  .mobile-disclosure:focus-visible, .unplaced-toggle:focus-visible { outline-offset: -3px; }
+  .disclosure-caret { position: absolute; right: 9px; bottom: 6px; font-size: 26px; line-height: 1; }
+  button[aria-expanded='true'] .disclosure-caret { rotate: 180deg; }
   .schedule-calendar { min-height: 0; margin-top: 16px; padding: 12px; }
-  .generate-button { min-height: 52px; margin-top: 16px; }
+  .schedule-calendar:not(.schedule-calendar--open), .schedule-generation:not(.schedule-generation--open) { display: none; }
+  .schedule-generator { margin-top: clamp(22px, 15vw, 62px); }
+  .schedule-generation { margin-top: 8px; }
+  .generate-button { min-height: 52px; font-size: 22px; background: var(--control-green); }
+  .mobile-generate-label { display: inline; }
   .schedule-results { min-height: 0; margin-top: 16px; padding: 14px; }
-  .create-task-link { min-height: 54px; margin-top: 16px; }
+  .schedule-mobile-divider { display: grid; justify-content: center; overflow: hidden; margin: 10px 0 clamp(28px, 10vw, 44px); }
+  .schedule-mobile-divider--bottom { margin: 24px 0 0; }
+  .schedule-unplaced h2, .create-task-link { font-size: clamp(23px, 7.3vw, 30px); }
+  .create-task-link { min-height: 55px; margin-top: clamp(18px, 9vw, 38px); padding-inline: 38px; }
+  .create-task-plus { position: absolute; right: 15px; }
   .schedule-slots { max-height: clamp(280px, 50svh, 520px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-  .unplaced-list { margin-top: 16px; gap: 12px; max-height: clamp(320px, 60svh, 600px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-  .unplaced-list li { min-height: 0; }
+  .unplaced-list { margin-top: clamp(18px, 9.5vw, 39px); gap: clamp(16px, 8.6vw, 36px); max-height: clamp(320px, 60svh, 600px); overflow: auto; overscroll-behavior: contain; }
+  .unplaced-list li { min-height: 0; gap: 0; padding: 0; }
+  .unplaced-title-mobile { display: block; }
+  .unplaced-list .unplaced-toggle {
+    position: relative;
+    width: 100%;
+    min-height: 55px;
+    padding-inline: 25px;
+    background: transparent;
+    font-size: clamp(23px, 7vw, 30px);
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+  }
+  .unplaced-details { display: none; }
+  .unplaced-details--open { display: grid; padding: 0 12px 12px; }
 }
 @media (max-width: 620px) {
   .schedule-calendar { grid-template-columns: minmax(0, 1fr); gap: 8px; }

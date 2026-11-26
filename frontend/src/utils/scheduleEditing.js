@@ -1,4 +1,5 @@
-import { isScheduleId, scheduleMinutes } from './schedule.js'
+import { formatScheduleTime, isScheduleId, scheduleMinutes } from './schedule.js'
+import { defaultWorkSettings, workingIntervals } from './workSettings.js'
 
 export function clockFromMinutes(minutes) {
   if (!Number.isInteger(minutes) || minutes < 0 || minutes >= 1440) return ''
@@ -40,7 +41,27 @@ export function protectedSlotReason(item, tasks) {
   return ''
 }
 
-export function validateScheduleEdit(items, tasks, serverItems = []) {
+function workTimeIssue(item, settings) {
+  const start = scheduleMinutes(item.start_time)
+  const end = scheduleMinutes(item.end_time)
+  const [[workStart, lunchStart], [lunchEnd, workEnd]] = workingIntervals(settings)
+  if (start < workStart || end > workEnd) {
+    return 'Рабочее время: ' + formatScheduleTime(settings.work_start) + '–' + formatScheduleTime(settings.work_end) + '.'
+  }
+  if (start < lunchEnd && end > lunchStart) {
+    return 'Блок пересекается с обедом ' + formatScheduleTime(settings.lunch_start) + '–' + formatScheduleTime(settings.lunch_end) + '.'
+  }
+  if (item.item_type === 'break' && Math.abs(end - start - settings.break_duration_min) > 1e-7) {
+    return 'Длительность перерыва должна составлять ' + settings.break_duration_min + ' мин.'
+  }
+  return ''
+}
+
+export function scheduleWorkIssues(items, settings) {
+  return [...new Set(items.map(item => workTimeIssue(item, settings)).filter(Boolean))]
+}
+
+export function validateScheduleEdit(items, tasks, serverItems = [], { settings = defaultWorkSettings, candidate } = {}) {
   const errors = []
   const localReasons = []
   const seen = new Set()
@@ -53,13 +74,19 @@ export function validateScheduleEdit(items, tasks, serverItems = []) {
       errors.push('Укажите корректное начало и окончание блока.')
       continue
     }
-    if (start < 540 || end > 1080) errors.push('Размещайте блоки в рабочее время с 09:00 до 18:00.')
-    if (start < 840 && end > 780) errors.push('Блок пересекается с обедом 13:00–14:00.')
+    if (!candidate || itemSignature(item) === itemSignature(candidate)) {
+      const issue = workTimeIssue(item, settings)
+      if (issue) {
+        const unchanged = !candidate && serverItems.some(original => itemSignature(original) === itemSignature(item))
+        if (unchanged) localReasons.push(issue)
+        else errors.push(issue)
+      }
+    }
     if (index > 0 && scheduleMinutes(ordered[index - 1].end_time) > start) {
       errors.push('Блоки расписания пересекаются. Выберите свободное время.')
     }
     if (item.item_type === 'break') {
-      if (item.task_id !== null || Math.abs(end - start - 10) > 1e-7) errors.push('Перерыв должен длиться ровно 10 минут.')
+      if (item.task_id !== null) errors.push('Перерыв нельзя привязать к задаче.')
       continue
     }
     if (!isScheduleId(item.task_id) || seen.has(item.task_id)) errors.push('Одна задача может быть размещена только один раз.')
@@ -85,22 +112,22 @@ export function validateScheduleEdit(items, tasks, serverItems = []) {
   return { errors: [...new Set(errors)], localReasons: [...new Set(localReasons)] }
 }
 
-export function firstAvailableStart(items, duration) {
-  for (let start = 540; start + duration <= 1080; start++) {
-    const end = start + duration
-    if (start < 840 && end > 780) continue
-    if (items.every(item => end <= scheduleMinutes(item.start_time) || start >= scheduleMinutes(item.end_time))) {
-      return clockFromMinutes(start)
+export function firstAvailableStart(items, duration, settings = defaultWorkSettings) {
+  for (const [from, to] of workingIntervals(settings)) {
+    for (let start = Math.ceil(from); duration > 0 && start + duration <= to; start++) {
+      if (items.every(item => start + duration <= scheduleMinutes(item.start_time) || start >= scheduleMinutes(item.end_time))) {
+        return clockFromMinutes(start)
+      }
     }
   }
-  return '09:00'
+  return ''
 }
 
 export function scheduleChanges(before, after, tasks) {
   const identity = item => item.item_type === 'task' ? 'task:' + item.task_id : item.key
   const oldByKey = new Map(before.map(item => [identity(item), item]))
   const newByKey = new Map(after.map(item => [identity(item), item]))
-  const range = item => item.start_time.slice(0, 5) + '–' + item.end_time.slice(0, 5)
+  const range = item => formatScheduleTime(item.start_time) + '–' + formatScheduleTime(item.end_time)
   const label = item => item.item_type === 'break' ? 'Перерыв' : tasks.find(task => task.id === item.task_id)?.title ?? 'Задача №' + item.task_id
   const changes = []
   for (const [key, item] of oldByKey) {

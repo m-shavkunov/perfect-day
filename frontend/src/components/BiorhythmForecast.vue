@@ -40,7 +40,7 @@ const rows = computed(() => props.items.map((item) => {
       <p class="forecast-hint">{{ view === 'chart' && items.length === 1 ? 'На день показаны три точки. Для линий выберите неделю или месяц.' : 'Выберите день, чтобы посмотреть его показатели.' }}</p>
     </div>
     <BiorhythmChart v-if="view === 'chart'" :items="items" :selected-date="selectedDate" :critical-items="criticalItems" @select-date="$emit('select-date', $event)" />
-    <div v-else class="forecast-table-wrapper" role="region" :aria-label="`${title}: таблица по дням`" tabindex="0">
+    <div v-else class="forecast-table-wrapper glass-panel glass-panel--inset" role="region" :aria-label="`${title}: таблица по дням`" tabindex="0">
       <table class="forecast-table" :aria-label="title">
         <thead>
           <tr>

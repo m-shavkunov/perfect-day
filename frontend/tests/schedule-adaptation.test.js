@@ -3,6 +3,7 @@ import { afterEach, test } from 'node:test'
 import { createScheduleState } from '../src/state/schedule.js'
 import { adaptScheduleRemainder, adaptationUnavailable, staleAdaptationReason } from '../src/utils/scheduleAdaptation.js'
 import { sameScheduleItems, validateScheduleEdit } from '../src/utils/scheduleEditing.js'
+import { defaultWorkSettings } from '../src/utils/workSettings.js'
 
 const date = '2026-11-18'
 const at = (hour, minute = 0, second = 0) => new Date(2026, 10, 18, hour, minute, second)
@@ -21,7 +22,7 @@ test('adaptation retains past tasks, the current task and a started break, and o
   const result = adapt(items, tasks)
   for (const original of items.slice(0, 3)) assert.ok(result.items.some(item => sameScheduleItems([item], [original])))
   assert.equal(result.items.find(item => item.task_id === 4).start_time, '11:10')
-  assert.equal(result.items.find(item => item.task_id === 3).start_time, '11:50')
+  assert.equal(result.items.find(item => item.task_id === 3).start_time, '11:40')
   assert.equal(result.items.some(item => item.task_id === 5), false)
   assert.equal(result.frozenCount, 3)
   assert.deepEqual(validateScheduleEdit(result.items, tasks, items).errors, [])
@@ -46,11 +47,11 @@ test('priority and deadline determine the order, and missed deadlines are report
 })
 
 test('oversized work remains unplaced, breaks are exactly ten minutes, and a final task may end exactly at 18:00', () => {
-  const tasks = [task(1, 9999, 'high'), task(2, 10), task(3, 40)]
-  const result = adapt([], tasks, at(17))
+  const tasks = [task(1, 9999, 'high'), task(2, 50), task(3, 20)]
+  const result = adapt([], tasks, at(16, 40))
   assert.deepEqual(result.unplaced.map(item => item.task_id), [1])
   assert.deepEqual(result.items.map(item => [item.item_type, item.start_time, item.end_time]), [
-    ['task', '17:00', '17:10'], ['break', '17:10', '17:20'], ['task', '17:20', '18:00'],
+    ['task', '16:40', '17:30'], ['break', '17:30', '17:40'], ['task', '17:40', '18:00'],
   ])
   assert.deepEqual(validateScheduleEdit(result.items, tasks).errors, [])
 })
@@ -84,8 +85,8 @@ test('adaptation is limited to today and working hours, and before work it start
 })
 
 test('unchanged times reuse break identities and repeated calculations produce the same result', () => {
-  const tasks = [task(1, 30), task(2, 30)]
-  const items = [block(1, '14:00', '14:30'), block(null, '14:30', '14:40'), block(2, '14:40', '15:10')]
+  const tasks = [task(1, 50), task(2, 30)]
+  const items = [block(1, '14:00', '14:50'), block(null, '14:50', '15:00'), block(2, '15:00', '15:30')]
   const first = adapt(items, tasks, at(14))
   const second = adapt(items, tasks, at(14))
   assert.ok(sameScheduleItems(first.items, items))
@@ -103,9 +104,9 @@ const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status })
 
-async function fixture({ history = false, onUnauthorized = () => {} } = {}) {
+async function fixture({ history = false, settings = defaultWorkSettings, onUnauthorized = () => {} } = {}) {
   const server = {
-    now: at(10, 30), error: 0, calls: [],
+    now: at(10, 30), error: 0, calls: [], settings,
     tasks: [task(1, 60, 'medium', history ? 'done' : 'planned'), task(2, 60), task(3, 60, 'low'), task(4, 30, 'high'), task(5, 9999)],
     plan: { id: 8, user_id: 3, date, items: [block(1, '09:00', '10:00'), block(2, '10:00', '11:00'), block(3, '14:00', '15:00')] },
   }
@@ -116,6 +117,7 @@ async function fixture({ history = false, onUnauthorized = () => {} } = {}) {
     if (server.error) return json({}, server.error)
     if (path.startsWith('/api/recommendations/')) return json({ date, items: [] })
     if (path === '/api/tasks/') return json(server.tasks)
+    if (path === '/api/settings/') return json({ id: 1, user_id: 3, ...server.settings })
     if (path === '/api/schedules/8' && request.method === 'GET') return json(server.plan)
     if (path === '/api/schedules/8' && request.method === 'PUT') {
       const body = JSON.parse(request.body)
@@ -126,6 +128,7 @@ async function fixture({ history = false, onUnauthorized = () => {} } = {}) {
   }
   const page = createScheduleState({ userId: 3, getToken: () => 'test-token', storage, getNow: () => server.now, onUnauthorized })
   await page.loadTasks()
+  await page.loadSettings()
   await page.open({ date, id: 8 })
   return { page, server, values }
 }
@@ -216,7 +219,11 @@ test('a server change during adaptation preflight blocks replacing the plan with
 test('pending adaptation blocks duplicate actions, and leaving the page ignores its late proposal', async () => {
   const { page, server } = await fixture()
   let finish
-  globalThis.fetch = async path => path === '/api/tasks/' ? json(server.tasks) : new Promise(resolve => { finish = resolve })
+  globalThis.fetch = async path => {
+    if (path === '/api/tasks/') return json(server.tasks)
+    if (path === '/api/settings/') return json({ id: 1, user_id: 3, ...server.settings })
+    return new Promise(resolve => { finish = resolve })
+  }
   const adapting = page.adaptRemainder()
   assert.equal(page.state.adapting, true)
   assert.equal(await page.adaptRemainder(), false)
@@ -240,4 +247,34 @@ test('an unchanged adaptation can be reviewed and cancelled without a write', as
   assert.equal(page.cancelEdit(), true)
   assert.equal(server.calls.some(call => call.method === 'PUT'), false)
   page.dispose()
+})
+
+test('adaptation follows custom lunch, cumulative work and break duration, and stops at the custom end', () => {
+  const settings = {
+    work_start: '08:15:30', work_end: '16:45', lunch_start: '11:40', lunch_end: '12:25',
+    break_duration_min: 15, work_before_break_min: 35,
+  }
+  const tasks = [task(1, 20), task(2, 20), task(3, 20)]
+  const result = adaptScheduleRemainder({ date, items: [], tasks, now: at(11, 55), settings })
+  assert.deepEqual(result.items.map(item => [item.task_id, item.start_time, item.end_time]), [
+    [1, '12:25', '12:45'], [2, '12:45', '13:05'], [null, '13:05', '13:20'], [3, '13:20', '13:40'],
+  ])
+  assert.equal(adaptScheduleRemainder({ date, items: [], tasks, now: at(7), settings }).items[0].start_time, '08:16')
+  assert.match(adaptationUnavailable(date, at(16, 45), settings), /16:45/)
+})
+
+test('a settings change blocks saving an adaptation until recalculated, preserving incompatible started slots', async () => {
+  const { page, server } = await fixture()
+  const old = server.plan.items.slice(0, 2)
+  assert.equal(await page.adaptRemainder(), true)
+  server.settings = { ...server.settings, work_start: '09:30', break_duration_min: 15 }
+  assert.equal(await page.saveEdit(), false)
+  assert.equal(page.state.adaptationStale, true)
+  assert.match(page.state.saveError, /Настройки рабочего дня изменились/)
+  assert.equal(await page.adaptRemainder(), true)
+  for (const block of old) assert.ok(page.state.draft.some(item => sameScheduleItems([item], [block])))
+  assert.ok(page.state.draft.some(item => item.item_type === 'break' && item.start_time === '11:00' && item.end_time === '11:15'))
+  assert.equal(await page.saveEdit(), false)
+  assert.equal(await page.saveEdit({ local: true }), true)
+  assert.equal(server.calls.some(call => call.method === 'PUT' || call.method === 'POST'), false)
 })

@@ -1,6 +1,10 @@
 import { getAdjacentPeriodDate, getPeriodRange } from './dates.js'
 
-export const lunch = { item_type: 'lunch', id: 'lunch', start_time: '13:00', end_time: '14:00' }
+const scheduleClock = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Yekaterinburg',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+})
 
 export function weekDates(selectedDate) {
   const { startDate, endDate } = getPeriodRange(selectedDate, 'week')
@@ -24,6 +28,21 @@ export function scheduleMinutes(value) {
   if (typeof value !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,6})?)?$/.test(value)) return NaN
   const [hours, minutes, seconds = 0] = value.split(':').map(Number)
   return hours * 60 + minutes + seconds / 60
+}
+
+export function formatScheduleTime(value) {
+  return value.endsWith(':00') ? value.slice(0, 5) : value
+}
+
+export function nextScheduledTask(plan, tasksById, now = new Date()) {
+  if (!plan) return null
+  const parts = Object.fromEntries(scheduleClock.formatToParts(now).map(({ type, value }) => [type, value]))
+  const today = [parts.year.padStart(4, '0'), parts.month, parts.day].join('-')
+  if (plan.date < today) return null
+
+  const currentMinute = scheduleMinutes([parts.hour, parts.minute, parts.second].join(':')) + now.getUTCMilliseconds() / 60000
+  return plan.items.find(item => item.item_type === 'task' && tasksById.get(item.task_id)?.status === 'planned'
+    && (plan.date > today || scheduleMinutes(item.start_time) > currentMinute)) ?? null
 }
 
 function scheduleKey(userId, date) {

@@ -1,11 +1,13 @@
 import { computed, reactive } from 'vue'
 import { getRecommendations } from '../api/recommendations.js'
 import { generateSchedule, getSchedule, updateSchedule } from '../api/schedules.js'
+import { getWorkSettings } from '../api/settings.js'
 import { getTasks } from '../api/tasks.js'
 import { localDateString } from '../utils/dates.js'
 import { getPlanningStorage } from '../utils/planningPreferences.js'
 import { forgetScheduleId, readScheduleId, rememberScheduleId } from '../utils/schedule.js'
 import { adaptScheduleRemainder, adaptationTasksFingerprint, staleAdaptationReason } from '../utils/scheduleAdaptation.js'
+import { sameWorkSettings } from '../utils/workSettings.js'
 import {
   clearLocalSchedule, draftScheduleItems, protectedSlotReason, readLocalSchedule,
   sameScheduleItems, saveLocalSchedule, scheduleChanges, scheduleFingerprint, validateScheduleEdit,
@@ -16,6 +18,7 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     date: localDateString(), plan: null, planStatus: 'loading', planError: '',
     generating: false, generationError: '', storageWarning: false, unscheduledIds: null,
     tasks: { items: [], status: 'loading', error: '' },
+    settings: { values: null, status: 'loading', error: '' },
     advice: { items: [], status: 'idle', error: '' },
     draft: null, initialDraft: null, saving: false, saveError: '', saveNotice: '', saveConflict: false,
     localItems: null, localStatus: 'none',
@@ -25,11 +28,12 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   const dirty = computed(() => state.draft !== null && !sameScheduleItems(state.draft, state.initialDraft))
   const changes = computed(() => state.draft === null ? [] : scheduleChanges(state.initialDraft, state.draft, state.tasks.items))
   const editValidation = computed(() => state.draft === null ? { errors: [], localReasons: [] }
-    : validateScheduleEdit(state.draft, state.tasks.items, state.plan.items))
+    : validateScheduleEdit(state.draft, state.tasks.items, state.plan.items, { settings: state.settings.values }))
   let addedItemNumber = 0
   let selection
   let taskRequest
   let adviceRequest
+  let settingsRequest
   let disposed = false
 
   function dispose() {
@@ -37,6 +41,7 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     selection?.controller.abort()
     taskRequest?.controller.abort()
     adviceRequest?.controller.abort()
+    settingsRequest?.controller.abort()
   }
 
   function unauthorized() {
@@ -54,6 +59,34 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
 
   function isCurrent(request, active) {
     return !disposed && request === active && !request.controller.signal.aborted && getToken() === request.token
+  }
+
+  function showSettings(settings) {
+    settingsRequest?.controller.abort()
+    settingsRequest = undefined
+    state.settings = { values: settings, status: 'ready', error: '' }
+    restoreLocal()
+  }
+
+  async function loadSettings() {
+    if (disposed || settingsRequest) return
+    const request = settingsRequest = newRequest()
+    if (!request) return
+    state.settings.status = 'loading'
+    state.settings.error = ''
+    try {
+      const settings = await getWorkSettings({ userId, token: request.token, signal: request.controller.signal })
+      if (isCurrent(request, settingsRequest)) showSettings(settings)
+    } catch (error) {
+      if (!isCurrent(request, settingsRequest)) return
+      if (error.status === 401 || error.status === 403) unauthorized()
+      else {
+        state.settings.status = 'error'
+        state.settings.error = error.message
+      }
+    } finally {
+      if (settingsRequest === request) settingsRequest = undefined
+    }
   }
 
   async function loadTasks() {
@@ -118,9 +151,10 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   }
 
   function restoreLocal() {
-    if (!state.plan || state.tasks.status !== 'ready') return
+    const settings = state.settings.values
+    if (!state.plan || state.tasks.status !== 'ready' || !settings) return
     const local = readLocalSchedule(storage, state.plan)
-    if (local.items && validateScheduleEdit(local.items, state.tasks.items, state.plan.items).errors.length) {
+    if (local.items && validateScheduleEdit(local.items, state.tasks.items, state.plan.items, { settings }).errors.length) {
       local.status = 'invalid'
       local.items = null
     }
@@ -151,7 +185,7 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     selection?.controller.abort()
     const request = selection = newRequest()
     if (!request) return
-    state.date = date || localDateString()
+    state.date = date || localDateString(getNow())
     state.plan = null
     state.planStatus = id ? 'loading' : 'missing'
     state.planError = ''
@@ -193,7 +227,11 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     state.generationError = ''
     const date = state.date
     try {
-      const result = await generateSchedule({ date, userId, token: request.token, signal: request.controller.signal })
+      const options = { userId, token: request.token, signal: request.controller.signal }
+      const settings = await getWorkSettings(options)
+      if (!isCurrent(request, selection)) return null
+      showSettings(settings)
+      const result = await generateSchedule({ date, ...options })
       if (!isCurrent(request, selection)) return null
       state.planError = ''
       showPlan(result.schedule, result.unscheduledIds)
@@ -210,7 +248,8 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   }
 
   function beginEdit() {
-    if (disposed || state.saving || state.adapting || state.generating || state.planStatus !== 'ready' || state.tasks.status !== 'ready') return false
+    if (disposed || state.saving || state.adapting || state.generating || state.planStatus !== 'ready'
+      || state.tasks.status !== 'ready' || state.settings.status !== 'ready') return false
     if (state.draft !== null) return true
     state.initialDraft = draftScheduleItems(displayedItems.value)
     state.draft = state.initialDraft.map(item => ({ ...item }))
@@ -229,7 +268,7 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     }
     const item = { ...candidate, key: replacingKey ?? (candidate.item_type === 'task' ? 'task:' + candidate.task_id : 'added-break:' + ++addedItemNumber) }
     const next = [...state.draft.filter(item => item.key !== replacingKey), item]
-    const validation = validateScheduleEdit(next, state.tasks.items, state.plan.items)
+    const validation = validateScheduleEdit(next, state.tasks.items, state.plan.items, { settings: state.settings.values, candidate: item })
     if (validation.errors.length) {
       state.saveError = validation.errors[0]
       return false
@@ -270,26 +309,30 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   async function adaptRemainder() {
     const request = selection
     if (!request || !isCurrent(request, selection) || state.generating || state.saving || state.adapting
-      || state.planStatus !== 'ready' || state.tasks.status !== 'ready' || state.draft !== null && !state.adaptation) return false
-    const source = (state.adaptation?.sourceItems ?? displayedItems.value).map(item => ({ ...item }))
+      || state.planStatus !== 'ready' || state.tasks.status !== 'ready' || state.settings.status !== 'ready'
+      || state.draft !== null && !state.adaptation) return false
     const plan = state.plan
     state.adapting = true
     state.saveError = ''
     state.saveNotice = ''
     try {
       const options = { userId, token: request.token, signal: request.controller.signal }
-      const [freshPlan, freshTasks] = await Promise.all([getSchedule({ id: plan.id, date: plan.date, ...options }), getTasks(options)])
+      const [freshPlan, freshTasks, settings] = await Promise.all([
+        getSchedule({ id: plan.id, date: plan.date, ...options }), getTasks(options), getWorkSettings(options),
+      ])
       if (!isCurrent(request, selection)) return false
+      state.tasks.items = freshTasks
+      showSettings(settings)
       if (scheduleFingerprint(freshPlan) !== scheduleFingerprint(plan)) {
         state.saveConflict = true
         state.saveError = 'Расписание на сервере изменилось. Загрузите актуальный план перед перерасчётом.'
         return false
       }
-      state.tasks.items = freshTasks
-      const proposal = adaptScheduleRemainder({ date: plan.date, items: source, tasks: freshTasks, serverItems: plan.items, now: getNow() })
+      const source = state.adaptation?.sourceItems ?? displayedItems.value
+      const proposal = adaptScheduleRemainder({ date: plan.date, items: source, tasks: freshTasks, serverItems: plan.items, now: getNow(), settings })
       state.initialDraft = draftScheduleItems(source)
       state.draft = proposal.items
-      state.adaptation = proposal
+      state.adaptation = { ...proposal, settings }
       state.adaptationStale = false
       state.saveConflict = false
       return true
@@ -311,20 +354,24 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     state.saveConflict = false
     const plan = state.plan
     const items = state.draft.map(item => ({ ...item }))
+    const previousSettings = state.settings.values
     const options = { userId, token: request.token, signal: request.controller.signal }
     try {
-      const [freshPlan, freshTasks] = await Promise.all([
-        getSchedule({ id: plan.id, date: plan.date, ...options }), getTasks(options),
+      const [freshPlan, freshTasks, settings] = await Promise.all([
+        getSchedule({ id: plan.id, date: plan.date, ...options }), getTasks(options), getWorkSettings(options),
       ])
       if (!isCurrent(request, selection)) return false
+      state.tasks.items = freshTasks
+      showSettings(settings)
       if (scheduleFingerprint(freshPlan) !== scheduleFingerprint(plan)) {
         state.saveConflict = true
         state.saveError = 'Расписание на сервере изменилось. Черновик сохранён на экране. Загрузите актуальный план перед повторной правкой.'
         return false
       }
-      state.tasks.items = freshTasks
       if (state.adaptation) {
-        const reason = staleAdaptationReason(state.adaptation, items, plan.date, getNow())
+        const reason = (!sameWorkSettings(state.adaptation.settings, settings)
+          ? 'Настройки рабочего дня изменились. Пересчитайте остаток дня заново.' : '')
+          || staleAdaptationReason(state.adaptation, items, plan.date, getNow(), settings)
           || (adaptationTasksFingerprint(freshTasks) !== state.adaptation.tasksFingerprint
             ? 'Данные задач изменились. Пересчитайте остаток дня заново, чтобы учесть их.' : '')
         if (reason) {
@@ -332,14 +379,17 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
           state.saveError = reason
           return false
         }
+      } else if (!sameWorkSettings(previousSettings, settings)) {
+        state.saveError = 'Настройки рабочего дня изменились. Проверьте черновик и подтвердите сохранение ещё раз.'
+        return false
       }
-      const validation = validateScheduleEdit(items, freshTasks, freshPlan.items)
+      const validation = validateScheduleEdit(items, freshTasks, freshPlan.items, { settings })
       if (validation.errors.length) {
         state.saveError = validation.errors.join(' ')
         return false
       }
       if (validation.localReasons.length && !local) {
-        state.saveError = 'Сервер не принимает сохранённые исторические блоки. Можно сохранить правки только в этом браузере.'
+        state.saveError = 'Сервер не принимает некоторые неизменённые блоки. Можно сохранить правки в этом браузере.'
         return false
       }
       if (local && !validation.localReasons.length) {
@@ -374,6 +424,6 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     }
   }
 
-  return { state, displayedItems, dirty, changes, editValidation, open, generate, loadTasks, loadAdvice, dispose,
+  return { state, displayedItems, dirty, changes, editValidation, open, generate, loadTasks, loadSettings, loadAdvice, dispose,
     beginEdit, placeItem, removeItem, cancelEdit, saveEdit, discardLocal, adaptRemainder }
 }
