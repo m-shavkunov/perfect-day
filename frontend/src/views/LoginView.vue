@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import brandLeaf from '../assets/brand-leaf.svg'
 import { auth, signIn } from '../state/auth.js'
 import { isOnline } from '../state/connection.js'
 
@@ -27,6 +28,7 @@ function validateField(name) {
         : 'Введите корректный email, например name@example.com.'
   } else {
     errors.password = form.password ? '' : 'Введите пароль.'
+    if (Array.from(form.password).length > 128) errors.password = 'Пароль должен содержать не более 128 символов.'
   }
 }
 
@@ -74,6 +76,7 @@ function showRecoveryNotice() {
 <template>
   <section class="login-page" aria-labelledby="login-title">
     <div class="login-panel glass-panel">
+      <img class="auth-brand" :src="brandLeaf" alt="" width="44" height="44" />
       <h1 id="login-title">Вход</h1>
       <form ref="formElement" class="login-form" :aria-busy="isSubmitting" novalidate @submit.prevent="submit">
         <div
@@ -175,7 +178,7 @@ input {
   padding: 6px 16px 5px;
   border: 0;
   border-radius: 0;
-  background: #4e624a;
+  background: var(--surface-control);
   color: #fff;
   font: inherit;
   font-size: clamp(22px, 2.777778vw, 40px);
@@ -253,14 +256,15 @@ button:disabled { opacity: 0.65; cursor: wait; }
 }
 
 @media (max-width: 600px) {
-  .login-page { padding: 24px 16px; }
-  .login-panel { min-height: calc(100svh - 48px); padding: 28px 20px; }
-  h1 { line-height: 1.2; }
-  .login-form { margin-top: 48px; }
-  .login-field--password { margin-top: 32px; }
-  input { height: 48px; padding: 0 12px; line-height: 1.2; }
-  .login-recovery { margin-top: 24px; line-height: 1.2; }
-  .login-submit { min-height: 64px; margin-top: 56px; line-height: 1.2; }
+  .login-page { padding: var(--auth-mobile-inset) clamp(16px, 5.83vw, 24px); }
+  .login-panel { min-height: min(778px, calc(100svh - 2 * var(--auth-mobile-inset))); padding: 22px 16px 24px; }
+  h1 { font-size: 30px; line-height: 1.2; }
+  .login-form { margin-top: clamp(48px, 16.8svh, 154px); }
+  .login-field--password { margin-top: clamp(24px, 5.23svh, 48px); }
+  input { height: 55px; padding: 0 12px; font-size: 28px; line-height: 1.2; }
+  .login-recovery { min-height: 44px; margin-top: 24px; font-size: 26px; line-height: 1.2; }
+  .login-submit { min-height: 55px; margin-top: clamp(36px, 17.6svh, 161px); padding: 8px 12px; font-size: 28px; line-height: 1.2; }
+  .login-register { margin-top: 16px; font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

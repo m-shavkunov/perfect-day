@@ -26,6 +26,18 @@ beforeEach(() => {
 
 after(() => { globalThis.fetch = originalFetch })
 
+test('validation failures show safe localized explanations and never echo request input', async () => {
+  globalThis.fetch = async () => json({ detail: [
+    { loc: ['body', 'password'], type: 'string_too_long', input: credentials.password, msg: credentials.password },
+    { loc: ['body', 'unknown'], type: 'value_error', msg: credentials.password },
+  ] }, 422)
+  await assert.rejects(apiRequest('/auth/login', { method: 'POST', body: credentials }), {
+    status: 422, message: 'Пароль должен содержать не более 128 символов.',
+  })
+  globalThis.fetch = async () => json({ detail: 'Schedule item cannot overlap lunch' }, 422)
+  await assert.rejects(apiRequest('/schedules/8', { method: 'PUT', body: { items: [] } }), /за пределами обеденного перерыва/)
+})
+
 test('offline requests fail before sending credentials or a mutation', async t => {
   const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })

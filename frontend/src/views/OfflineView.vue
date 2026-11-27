@@ -14,7 +14,7 @@ async function reconnect() {
   retryFailed.value = false
   const path = route.query.returnTo
   const target = typeof path === 'string' && path.startsWith('/') && !path.startsWith('//')
-    && router.resolve(path).meta.requiresAuth ? path : { name: 'dashboard' }
+    && (path === '/' || router.resolve(path).meta.requiresAuth) ? path : { name: 'dashboard' }
 
   try {
     retryFailed.value = isNavigationFailure(await router.replace(target))

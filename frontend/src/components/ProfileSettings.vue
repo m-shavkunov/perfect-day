@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppNavigation from './AppNavigation.vue'
 import fieldAsset from '../assets/profile-field.svg'
@@ -14,6 +14,10 @@ const props = defineProps({
 const emit = defineEmits(['logout', 'save', 'change'])
 const birthDateLabel = computed(() => isDateString(props.user.birth_date) ? props.user.birth_date.split('-').reverse().join('.') : 'Не указано')
 const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'owl', label: 'Сова' }, { value: 'dove', label: 'Голубь' }]
+const chronotypeOpen = ref(false)
+const priorityOpen = ref(false)
+const chronotypeId = useId()
+const priorityId = useId()
 </script>
 
 <template>
@@ -35,21 +39,18 @@ const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'o
           </div>
           <div class="identity-row identity-row--email">
             <dt>Почта:</dt>
-            <dd class="identity-value identity-value--asset" :title="user.email">
-              <img class="field-asset" :src="fieldAsset" alt="" aria-hidden="true" />
+            <dd class="identity-value" :title="user.email">
               <span class="email-value" :class="{ 'email-value--long': user.email?.length > 20, 'email-value--very-long': user.email?.length > 45 }" tabindex="0">{{ user.email || 'Не указано' }}</span>
             </dd>
           </div>
         </dl>
-        <button class="logout-button" type="button" @click="$emit('logout')">
-          <img class="field-asset" :src="fieldAsset" alt="" aria-hidden="true" />
-          <span>Выйти из аккаунта</span>
-        </button>
       </section>
       <form class="planning-panel" :aria-busy="form.isSaving" @submit.prevent="$emit('save')">
         <h2>Параметры планирования</h2>
-        <RouterLink class="work-settings-link" :to="{ name: 'settings' }">Настройки рабочего дня</RouterLink>
-        <fieldset class="chronotype-fieldset" :disabled="form.isSaving">
+        <button class="design-disclosure planning-toggle" type="button" :aria-controls="chronotypeId" :aria-expanded="chronotypeOpen" @click="chronotypeOpen = !chronotypeOpen">
+          Учет хронотипа
+        </button>
+        <fieldset :id="chronotypeId" class="chronotype-fieldset" :class="{ 'planning-group--open': chronotypeOpen }" :disabled="form.isSaving">
           <legend>Учет хронотипа:</legend>
           <div class="chronotype-options">
             <label v-for="option in chronotypes" :key="option.value">
@@ -58,7 +59,10 @@ const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'o
             </label>
           </div>
         </fieldset>
-        <fieldset class="priority-fieldset" :disabled="form.isSaving" aria-describedby="planning-local-note">
+        <button class="design-disclosure planning-toggle" type="button" :aria-controls="priorityId" :aria-expanded="priorityOpen" @click="priorityOpen = !priorityOpen">
+          Приоритет при перегрузке
+        </button>
+        <fieldset :id="priorityId" class="priority-fieldset" :class="{ 'planning-group--open': priorityOpen }" :disabled="form.isSaving" aria-describedby="planning-local-note">
           <legend>Приоритет при перегрузке:</legend>
           <div class="priority-options">
             <label><input type="checkbox" :checked="form.shiftRoutineToEvening" @change="emit('change', { shiftRoutineToEvening: $event.target.checked })" /><span>Смещать рутину на вечер</span></label>
@@ -66,15 +70,21 @@ const chronotypes = [{ value: 'lark', label: 'Жаворонок' }, { value: 'o
           </div>
           <span id="planning-local-note" class="visually-hidden">Приоритеты сохраняются в этом браузере для текущего аккаунта. Планировщик задач пока не применяет эти параметры.</span>
         </fieldset>
+        <RouterLink class="work-settings-link" :to="{ name: 'settings' }">Настройки рабочего дня</RouterLink>
         <div class="planning-feedback" aria-live="polite">
           <p v-if="form.error" class="planning-error" role="alert">{{ form.error }}</p>
           <p v-else-if="form.message" role="status">{{ form.message }}</p>
         </div>
         <button class="save-button" type="submit" :disabled="!isOnline || form.isSaving">
-          <span :class="{ 'save-label--hidden': form.isSaving }" :aria-hidden="form.isSaving">Сохранить параметры планирования</span>
+          <span class="save-label--wide" :class="{ 'save-label--hidden': form.isSaving }" :aria-hidden="form.isSaving">Сохранить параметры планирования</span>
+          <span class="save-label--compact" :class="{ 'save-label--hidden': form.isSaving }" :aria-hidden="form.isSaving">Сохранить параметры</span>
           <span v-if="form.isSaving">Сохраняем…</span>
         </button>
       </form>
+      <button class="logout-button" type="button" @click="$emit('logout')">
+        <img class="field-asset" :src="fieldAsset" alt="" aria-hidden="true" />
+        <span>Выйти из аккаунта</span>
+      </button>
     </div>
   </section>
 </template>
@@ -102,7 +112,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-off
 button:disabled { opacity: 0.65; cursor: wait; }
 .profile-navigation { grid-area: navigation; justify-self: center; }
 .profile-page-title { grid-area: title; display: grid; place-items: center; margin: 0 29px 0 30px; padding: 0 12px; background: #4e624a; font: inherit; text-align: center; }
-.user-panel { grid-area: user; display: flex; flex-direction: column; min-width: 0; padding: 16px 32px 39px; }
+.user-panel { grid-area: user; display: flex; flex-direction: column; min-width: 0; padding: 16px 32px 139px; }
 h2 { margin: 0; font: inherit; text-align: center; }
 .user-panel h2 { transform: translateX(1.5px); white-space: nowrap; }
 .identity-fields { margin: 25px 0 0; }
@@ -111,18 +121,17 @@ h2 { margin: 0; font: inherit; text-align: center; }
 .identity-row--name dt { transform: translateX(1px); }
 .identity-row--birth-date { margin-top: 25px; }
 .identity-row--email { margin-top: 26px; }
-.identity-row--email dt { transform: translateX(-6px); }
-.identity-value { display: grid; place-items: center; min-width: 0; width: 100%; height: 81px; margin: 13px 0 0; padding: 0 8px; background: #4e624a; text-align: center; overflow-wrap: anywhere; }
+.identity-value { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; min-width: 0; width: 100%; height: 81px; margin: 13px 0 0; padding: 0 8px; background: var(--surface-control); text-align: center; overflow-wrap: anywhere; }
 .identity-row--name .identity-value { margin-top: 6px; }
-.identity-value--asset { position: relative; isolation: isolate; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; margin-left: 3px; padding-top: 13px; align-items: start; background: none; }
 .field-asset { display: block; position: absolute; left: 0; top: 0; z-index: -1; }
 .email-value { max-width: 100%; max-height: 100%; overflow: auto; line-height: 1.15; }
 .email-value--long { font-size: max(16px, 0.75em); }
 .email-value--very-long { font-size: max(16px, 0.5em); }
 .email-value:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
-.logout-button { position: relative; isolation: isolate; flex: none; width: min(409px, 100%); height: 81px; margin: auto 0 0 3px; padding: 0 8px; overflow: hidden; background: none; }
-.planning-panel { grid-area: planning; display: flex; flex-direction: column; min-width: 0; min-height: 783px; margin: 10px 29px 39px 30px; padding: 16px 0 27px; background: #4e624a; }
-.work-settings-link { align-self: center; display: grid; place-items: center; min-height: 44px; max-width: 100%; margin: 12px 0 0; padding: 8px 16px; background: #40523d; color: #fff; font-size: 20px; line-height: 1.25; text-align: center; }
+.logout-button { grid-area: user; align-self: end; position: relative; isolation: isolate; width: min(409px, calc(100% - 64px)); height: 81px; margin: 0 0 39px 35px; padding: 0 8px; overflow: hidden; background: none; }
+.planning-panel { grid-area: planning; display: flex; flex-direction: column; min-width: 0; min-height: 783px; margin: 10px 29px 39px 30px; padding: 16px 0 27px; background: var(--surface-control); }
+.planning-toggle { display: none; }
+.work-settings-link { align-self: center; display: grid; place-items: center; min-height: 44px; max-width: 100%; margin: 20px 0 0; padding: 8px 16px; color: #fff; font-size: 20px; line-height: 1.25; text-align: center; }
 .work-settings-link:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend { float: left; width: 100%; padding: 0; text-align: center; }
@@ -141,24 +150,24 @@ fieldset:disabled label, fieldset:disabled input { cursor: wait; }
 .planning-feedback { margin: 20px 38px 0; font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
 .planning-feedback p { margin: 0; }
 .planning-error { padding: 10px; background: #693d35; }
-.save-button { display: grid; place-items: center; flex: none; align-self: stretch; min-height: 91px; margin: auto 39px 0 38px; padding: 12px; background: #40523d; }
+.save-button { display: grid; place-items: center; flex: none; align-self: stretch; min-height: 91px; margin: auto 39px 0 38px; padding: 12px; background: var(--surface-action); }
 .save-button span { grid-area: 1 / 1; }
+.save-label--compact { display: none; }
 .save-label--hidden { visibility: hidden; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (hover: hover) { button:not(:disabled):hover { filter: brightness(1.08); } }
-@media (min-width: 1001px) and (max-width: 1250px) { .user-panel { padding-inline: 20px; } .user-panel h2 { font-size: 0.9em; } label { gap: 8px; } input { width: 24px; height: 24px; } .priority-options { padding-inline: 24px; } }
+@media (min-width: 1001px) and (max-width: 1250px) { .user-panel { padding-inline: 20px; } .logout-button { margin-left: 23px; width: min(409px, calc(100% - 40px)); } .user-panel h2 { font-size: 0.9em; } label { gap: 8px; } input { width: 24px; height: 24px; } .priority-options { padding-inline: 24px; } }
 @media (max-width: 1000px) {
   .profile-page { font-size: 26px; line-height: 1.4; }
   .profile-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'navigation' 'title' 'user' 'planning'; gap: 24px; padding: 24px 16px; }
   .settings-backdrop { display: none; }
   .profile-page-title { min-height: 76px; margin: 0; padding: 16px; }
-  .user-panel { align-items: center; margin-top: 0; padding: 24px; }
+  .user-panel { align-items: center; margin-top: 0; padding: 24px 24px 128px; }
   .user-panel h2 { transform: none; white-space: normal; }
   .identity-fields { width: min(409px, 100%); margin-top: 24px; }
   .identity-row dt { transform: none; }
   .identity-value { height: 72px; margin-left: 0; }
-  .identity-value--asset { padding-top: 18px; }
-  .logout-button { height: 72px; margin: 32px 0 0; }
+  .logout-button { justify-self: center; height: 72px; margin: 0 0 24px; }
   .planning-panel { min-height: 0; margin: 0; padding: 24px; }
   .chronotype-options { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px 28px; width: 100%; }
   .chronotype-options label:nth-child(-n+2) { transform: none; }
@@ -179,8 +188,28 @@ fieldset:disabled label, fieldset:disabled input { cursor: wait; }
   }
 }
 @media (max-width: 900px) {
-  .profile-layout { padding-top: 0; }
-  .profile-navigation { width: auto; margin-inline: -16px; justify-self: stretch; }
+  .profile-layout { grid-template-areas: 'navigation' 'user' 'planning' 'logout'; gap: 0; padding: 0 22px 28px; }
+  .profile-navigation { width: auto; margin: 0 -22px 28px; justify-self: stretch; }
+  .profile-page-title { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .settings-backdrop { display: block; grid-area: 2 / 1 / 5 / 2; margin: 0; }
+  .user-panel { padding: 16px 16px 0; background: transparent; box-shadow: none; }
+  .identity-fields { width: 100%; margin-top: 16px; }
+  .identity-row { width: 100%; }
+  .identity-row dt { font-size: 17px; }
+  .identity-row--birth-date, .identity-row--email { margin-top: 16px; }
+  .identity-row .identity-value { height: 55px; margin-top: 4px; padding: 0 8px; align-items: center; }
+  .logout-button .field-asset { display: none; }
+  .planning-panel { padding: 16px 0 0; margin: 30px 16px 0; border-top: 1px solid rgb(255 255 255 / 70%); background: transparent; }
+  .planning-toggle { display: grid; margin-top: 24px; font-size: clamp(18px, 5.4vw, 25px); }
+  .chronotype-fieldset, .priority-fieldset { display: none; margin-top: 12px; }
+  .planning-group--open { display: block; }
+  fieldset legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .chronotype-options, .priority-options { gap: 4px; padding: 0; }
+  .planning-feedback { margin-top: 8px; }
+  .save-button { min-height: 55px; margin: 12px 0 0; }
+  .save-label--compact { display: inline; }
+  .save-label--wide { display: none; }
+  .logout-button { grid-area: logout; justify-self: stretch; width: auto; height: auto; min-height: 55px; margin: 24px 16px 36px; background: var(--surface-action); }
 }
-@media (max-width: 600px) { .profile-page { font-size: 22px; } .chronotype-options { flex-direction: column; align-items: flex-start; } .priority-options label { align-items: flex-start; } .identity-value--asset { padding-top: 22px; } }
+@media (max-width: 600px) { .profile-page { font-size: 22px; } .chronotype-options { flex-direction: column; align-items: flex-start; } }
 </style>

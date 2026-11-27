@@ -1,6 +1,12 @@
 import { formatScheduleTime, isScheduleId, scheduleMinutes } from './schedule.js'
 import { defaultWorkSettings, workingIntervals } from './workSettings.js'
 
+export function scheduleSizeError(count) {
+  if (count === 0) return 'Добавьте хотя бы один блок, чтобы сохранить расписание.'
+  if (count > 500) return 'В расписании может быть не более 500 блоков.'
+  return ''
+}
+
 export function clockFromMinutes(minutes) {
   if (!Number.isInteger(minutes) || minutes < 0 || minutes >= 1440) return ''
   return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0')

@@ -23,7 +23,10 @@ test('settings validate the day, lunch and positive integer durations', () => {
   assert.deepEqual(Object.keys(errors).sort(), ['break_duration_min', 'lunch_end', 'lunch_start', 'work_before_break_min', 'work_end'])
   assert.deepEqual(prepareWorkSettings({ ...defaults, lunch_start: '09:00', lunch_end: '18:00' }).errors, {})
   assert.ok(prepareWorkSettings({ ...defaults, lunch_end: '24:00' }).errors.lunch_end)
-  assert.ok(prepareWorkSettings({ ...defaults, break_duration_min: 2147483648 }).errors.break_duration_min)
+  assert.deepEqual(prepareWorkSettings({ ...defaults, break_duration_min: 120, work_before_break_min: 240 }).errors, {})
+  const overLimit = prepareWorkSettings({ ...defaults, break_duration_min: 121, work_before_break_min: 241 }).errors
+  assert.match(overLimit.break_duration_min, /от 1 до 120/)
+  assert.match(overLimit.work_before_break_min, /от 1 до 240/)
 })
 
 test('unchanged time controls preserve the precision of previously saved values', () => {

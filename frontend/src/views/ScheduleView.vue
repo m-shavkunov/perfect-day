@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, RouterLink, useRoute, useRouter } from 'vue-router'
 import AppNavigation from '../components/AppNavigation.vue'
 import AppDialog from '../components/AppDialog.vue'
+import AppNotice from '../components/AppNotice.vue'
 import TaskTypeIcon from '../components/TaskTypeIcon.vue'
 import mobileDivider from '../assets/mobile-divider.svg'
 import scheduleDivider from '../assets/schedule-divider.svg'
@@ -12,7 +13,7 @@ import { createScheduleState } from '../state/schedule.js'
 import { getAdjacentPeriodDate, isDateString, localDateString } from '../utils/dates.js'
 import { formatScheduleTime, nextScheduledTask, parseScheduleId, scheduleMinutes, weekDates } from '../utils/schedule.js'
 import { taskTypes } from '../utils/tasks.js'
-import { clockFromMinutes, firstAvailableStart, protectedSlotReason, scheduleWorkIssues, validateScheduleEdit } from '../utils/scheduleEditing.js'
+import { clockFromMinutes, firstAvailableStart, protectedSlotReason, scheduleSizeError, scheduleWorkIssues, validateScheduleEdit } from '../utils/scheduleEditing.js'
 import { adaptationUnavailable } from '../utils/scheduleAdaptation.js'
 
 const route = useRoute()
@@ -63,6 +64,14 @@ const expandedUnplaced = reactive(new Set())
 const clock = ref(new Date())
 const nextTask = computed(() => state.tasks.status === 'ready'
   ? nextScheduledTask(state.plan, taskById.value, clock.value) : null)
+const generatedDate = ref('')
+const dismissedReminder = ref(null)
+const dueReminder = computed(() => {
+  const upcoming = nextTask.value
+  if (!upcoming || upcoming.id === dismissedReminder.value || !isOnline.value) return null
+  const cutoff = new Date(clock.value.getTime() + 15 * 60_000)
+  return nextScheduledTask(state.plan, taskById.value, cutoff)?.id === upcoming.id ? null : upcoming
+})
 const busy = computed(() => state.saving || state.adapting)
 const editsUnavailable = computed(() => !isOnline.value || state.generating || busy.value || state.tasks.status !== 'ready' || state.settings.status !== 'ready')
 const adaptationReason = computed(() => settings.value ? adaptationUnavailable(state.date, clock.value, settings.value) : '')
@@ -78,6 +87,10 @@ const candidate = computed(() => timeEditor.value && ({
 }))
 const placementError = computed(() => {
   if (!candidate.value) return ''
+  if (!timeEditor.value.key && state.draft) {
+    const sizeError = scheduleSizeError(state.draft.length + 1)
+    if (sizeError) return sizeError
+  }
   if (!candidate.value.start_time) return 'Укажите свободное время начала.'
   if (scheduleMinutes(candidate.value.start_time) + editedDuration.value > scheduleMinutes(settings.value.work_end)) {
     return 'Блок не помещается до окончания рабочего дня в ' + formatScheduleTime(settings.value.work_end) + '.'
@@ -98,6 +111,7 @@ watch(() => [route.name, route.query.date, route.query.id], () => {
 watch(() => state.draft, draft => {
   if (draft === null) { timeEditor.value = null; reviewOpen.value = false }
 })
+watch(() => state.date, () => { generatedDate.value = '' })
 onMounted(() => {
   loadTasks()
   loadSettings()
@@ -179,6 +193,7 @@ async function generatePlan() {
   if (!window.confirm('Сгенерировать расписание на ' + date + '? Существующий план на этот день будет заменён целиком.')) return
   const plan = await generate()
   if (plan && route.name === 'schedule') {
+    generatedDate.value = plan.date
     router.replace({ name: 'schedule', query: { date: plan.date, id: String(plan.id) } })
   }
 }
@@ -255,16 +270,22 @@ function toggleUnplaced(id) {
                 <span class="mobile-generate-label">Сгенерировать расписание</span>
               </template>
             </button>
-            <p v-if="state.generationError" class="schedule-feedback error" role="alert">{{ state.generationError }}</p>
+            <AppNotice v-if="state.generationError" class="generation-error" kind="error" @dismiss="state.generationError = ''">{{ state.generationError }}</AppNotice>
           </div>
         </div>
 
         <section class="schedule-results glass-panel glass-panel--inset" :class="{ 'schedule-results--mobile-empty': state.planStatus === 'missing' && state.settings.status === 'ready' && !state.planError && !generationOpen }"
           aria-labelledby="day-title" :aria-busy="state.planStatus === 'loading' || state.generating || busy">
           <h2 id="day-title">{{ state.draft !== null ? 'Черновик на ' : 'Расписание на ' }}<time :datetime="state.date">{{ dayFormat.format(asDate(state.date)) }}</time></h2>
+          <AppNotice v-if="generatedDate === state.date && state.planStatus === 'ready'" kind="success" @dismiss="generatedDate = ''">Расписание составлено</AppNotice>
           <section v-if="state.planStatus === 'ready'" class="next-task" aria-labelledby="next-task-title">
             <h3 id="next-task-title">Ближайшая задача по серверному плану</h3>
-            <div role="status">
+            <AppNotice v-if="dueReminder" class="task-reminder" kind="reminder" @dismiss="dismissedReminder = dueReminder.id">
+              Скоро начнётся «{{ slotTitle(dueReminder) }}»
+              <p><time :datetime="dueReminder.start_time">{{ formatScheduleTime(dueReminder.start_time) }}</time> (Екатеринбург)</p>
+              <p v-if="reasonById.get(dueReminder.task_id)">{{ reasonById.get(dueReminder.task_id) }}</p>
+            </AppNotice>
+            <div v-else role="status">
               <p v-if="nextTask">
                 <time :datetime="nextTask.start_time">{{ formatScheduleTime(nextTask.start_time) }}</time>
                 <span> (Екатеринбург) · {{ slotTitle(nextTask) }}</span>
@@ -295,6 +316,7 @@ function toggleUnplaced(id) {
               <button class="primary" type="button" :disabled="busy || !dirty && !state.adaptation || editValidation.errors.length > 0 || state.saveConflict" @click="reviewOpen = true">Проверить и сохранить</button>
             </template>
           </div>
+          <p v-if="state.draft && !state.saveError && !reviewOpen && editValidation.errors.length" class="schedule-feedback editor-feedback error" role="status">{{ editValidation.errors.join(' ') }}</p>
           <p v-if="state.planStatus === 'ready' && state.draft === null && adaptationReason" id="adaptation-availability" class="adaptation-availability">{{ adaptationReason }}</p>
           <p v-if="state.adaptation" class="schedule-feedback editor-feedback" role="status">Остаток дня с {{ state.adaptation.from }} · Сохранено блоков без изменений: {{ state.adaptation.frozenCount }}. Не поместилось задач: {{ state.adaptation.unplaced.length }}. Это черновик.</p>
           <div v-if="state.saveError" class="schedule-feedback editor-feedback error" role="alert">
@@ -302,7 +324,7 @@ function toggleUnplaced(id) {
             <button v-if="state.saveConflict" type="button" :disabled="!isOnline || busy" @click="reloadServer">Загрузить актуальный план</button>
             <button v-else-if="state.adaptationStale" type="button" :disabled="!isOnline || busy || Boolean(adaptationReason)" @click="replanDay">Пересчитать заново</button>
           </div>
-          <p v-if="state.saveNotice && state.localStatus !== 'saved'" class="schedule-feedback editor-feedback" role="status">{{ state.saveNotice }}</p>
+          <AppNotice v-if="state.saveNotice && state.localStatus !== 'saved'" kind="success" @dismiss="state.saveNotice = ''">{{ state.saveNotice }}</AppNotice>
           <div v-if="state.localStatus !== 'none'" class="schedule-feedback editor-feedback local-plan-note" role="status">
             <p v-if="state.localStatus === 'saved'">Локальные правки · только этот браузер. На сервере сохранён исходный план.</p>
             <p v-else>Локальные правки устарели или не подходят к текущим задачам и настройкам. Показан серверный план.</p>
@@ -351,7 +373,7 @@ function toggleUnplaced(id) {
       </section>
 
       <aside class="schedule-unplaced glass-panel" aria-labelledby="unplaced-title">
-        <div class="schedule-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
+        <div class="mobile-divider schedule-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
         <h2 id="unplaced-title">Неразмещённые задачи</h2>
         <RouterLink class="create-task-link" :to="{ name: 'tasks', query: { new: '1' } }">
           <span aria-hidden="true" class="create-task-plus">+</span> <span>Создать задачу</span>
@@ -378,7 +400,7 @@ function toggleUnplaced(id) {
             </div>
           </li>
         </ul>
-        <div class="schedule-mobile-divider schedule-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
+        <div class="mobile-divider schedule-mobile-divider schedule-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
       </aside>
     </div>
 
@@ -423,7 +445,7 @@ function toggleUnplaced(id) {
         <p>Правки можно сохранить только в этом браузере. Они будут отмечены на экране. Серверное расписание останется прежним.</p>
       </div>
       <p v-for="error in editValidation.errors" :key="error" class="dialog-error" role="alert">{{ error }}</p>
-      <p v-if="state.saveError" class="dialog-error" role="alert">{{ state.saveError }}</p>
+      <AppNotice v-if="state.saveError" kind="error" :dismissible="false">{{ state.saveError }}</AppNotice>
       <p v-if="!isOnline" class="local-save-note" role="status">Для проверки и сохранения правок нужна сеть.</p>
       <div class="dialog-actions">
         <button type="button" :disabled="busy" @click="reviewOpen = false">Вернуться к черновику</button>
@@ -443,7 +465,6 @@ function toggleUnplaced(id) {
   min-height: 100svh;
   color: #fff;
   font: 20px/1.3 'Times New Roman', serif;
-  --panel-green: #4e624a;
   --control-green: #40523d;
 }
 .schedule-layout {
@@ -494,7 +515,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   place-items: center;
   min-height: 85px;
   padding: 10px;
-  background: var(--panel-green);
+  background: var(--surface-action);
 }
 .schedule-calendar {
   display: grid;
@@ -504,7 +525,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   min-height: 197px;
   margin-top: 56px;
   padding: 20px 26px;
-  background: var(--panel-green);
+  background: var(--surface-action);
 }
 .calendar-controls { display: grid; gap: 8px; }
 .month-label { margin: 0; font-size: clamp(23px, 2.3vw, 33px); }
@@ -525,12 +546,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .week-days time { font-size: clamp(20px, 2.15vw, 31px); }
 .week-days button[aria-pressed='true'] { background: #354730; box-shadow: inset 0 0 0 1px #fff; }
 .schedule-generator { margin-top: 26px; }
-.mobile-disclosure, .mobile-generate-label, .unplaced-title-mobile, .schedule-mobile-divider { display: none; }
+.mobile-disclosure, .mobile-generate-label, .unplaced-title-mobile { display: none; }
 .generate-button {
   width: 100%;
   min-height: 81px;
   margin: 0;
-  background: var(--panel-green);
+  background: var(--surface-control);
   font-size: clamp(22px, 2.45vw, 35px);
 }
 .schedule-results {
@@ -542,6 +563,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .next-task { flex: none; margin: 0 0 12px; padding: 10px 12px; background: var(--control-green); font-size: 18px; overflow-wrap: anywhere; }
 .next-task h3 { margin: 0; font: inherit; font-weight: 700; }
 .next-task p { margin: 4px 0 0; }
+.generation-error, .task-reminder { margin-block-start: 12px; }
 .schedule-feedback { margin: 12px 0 0; padding: 12px; background: var(--control-green); overflow-wrap: anywhere; }
 .schedule-feedback p { margin: 0 0 8px; }
 .schedule-feedback.error { background: #693d35; }
@@ -562,7 +584,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .slot-info { min-width: 0; overflow-wrap: anywhere; }
 .slot-info h3, .unplaced-list h3 { margin: 0; font-size: clamp(22px, 2.4vw, 34px); font-weight: 400; }
 .slot-info h3 { display: flex; align-items: center; gap: 10px; line-height: 1.15; }
-.slot-info h3 img { background: #dfead4; }
 .schedule-slot--break h3 { font-size: 20px; }
 .slot-info p { margin: 6px 0 0; font-size: 18px; }
 .slot-info .slot-reason { max-width: 65ch; }
@@ -580,7 +601,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   gap: 8px;
   min-height: 99px;
   margin-top: 65px;
-  background: var(--panel-green);
+  background: var(--surface-control);
   font-size: clamp(22px, 2.45vw, 35px);
 }
 .unplaced-list { display: grid; gap: 24px; margin-top: 42px; }
@@ -590,7 +611,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   gap: 12px;
   min-height: 148px;
   padding: 16px;
-  background: var(--panel-green);
+  background: var(--surface-control);
   overflow-wrap: anywhere;
   text-align: center;
 }
@@ -677,7 +698,7 @@ button.primary:not(:disabled):hover { background: #cfdcbe; }
     width: 100%;
     min-height: 124px;
     padding: 12px 32px 16px;
-    background: var(--panel-green);
+    background: var(--surface-action);
     font-size: clamp(23px, 7vw, 30px);
     line-height: 1.12;
     overflow-wrap: anywhere;
@@ -689,17 +710,18 @@ button.primary:not(:disabled):hover { background: #cfdcbe; }
   .schedule-calendar:not(.schedule-calendar--open), .schedule-generation:not(.schedule-generation--open) { display: none; }
   .schedule-generator { margin-top: clamp(22px, 15vw, 62px); }
   .schedule-generation { margin-top: 8px; }
-  .generate-button { min-height: 52px; font-size: 22px; background: var(--control-green); }
+  .generate-button { min-height: 52px; font-size: 22px; }
   .mobile-generate-label { display: inline; }
   .schedule-results { min-height: 0; margin-top: 16px; padding: 14px; }
-  .schedule-mobile-divider { display: grid; justify-content: center; overflow: hidden; margin: 10px 0 clamp(28px, 10vw, 44px); }
+  .schedule-mobile-divider { margin: 10px 0 clamp(28px, 10vw, 44px); }
   .schedule-mobile-divider--bottom { margin: 24px 0 0; }
   .schedule-unplaced h2, .create-task-link { font-size: clamp(23px, 7.3vw, 30px); }
-  .create-task-link { min-height: 55px; margin-top: clamp(18px, 9vw, 38px); padding-inline: 38px; }
+  .create-task-link { min-height: 55px; margin-top: clamp(18px, 9vw, 38px); padding-inline: 38px; background: var(--surface-action); }
   .create-task-plus { position: absolute; right: 15px; }
   .schedule-slots { max-height: clamp(280px, 50svh, 520px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .slot-divider img { width: 100%; height: 1px; transform: none; }
   .unplaced-list { margin-top: clamp(18px, 9.5vw, 39px); gap: clamp(16px, 8.6vw, 36px); max-height: clamp(320px, 60svh, 600px); overflow: auto; overscroll-behavior: contain; }
-  .unplaced-list li { min-height: 0; gap: 0; padding: 0; }
+  .unplaced-list li { min-height: 0; gap: 0; padding: 0; background: var(--surface-action); }
   .unplaced-title-mobile { display: block; }
   .unplaced-list .unplaced-toggle {
     position: relative;

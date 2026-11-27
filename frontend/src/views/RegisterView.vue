@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import brandLeaf from '../assets/brand-leaf.svg'
 import { registrationDraft } from '../state/registration'
 
 const router = useRouter()
@@ -19,14 +20,15 @@ const fields = [
 
 function validateField(name) {
   const value = form[name]
+  const passwordLength = name === 'password' ? Array.from(value).length : 0
   let message = ''
 
   if (!value.trim()) {
     message = 'Заполните это поле.'
   } else if (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
     message = 'Введите корректный email, например name@example.com.'
-  } else if (name === 'password' && Array.from(value).length < 8) {
-    message = 'Пароль должен содержать не менее 8 символов.'
+  } else if (name === 'password' && (passwordLength < 8 || passwordLength > 128)) {
+    message = 'Пароль должен содержать от 8 до 128 символов.'
   } else if (name === 'confirmPassword' && value !== form.password) {
     message = 'Пароли не совпадают.'
   }
@@ -69,6 +71,7 @@ async function submit() {
 <template>
   <section class="registration-page" aria-labelledby="registration-title">
     <div class="registration-panel glass-panel">
+      <img class="auth-brand" :src="brandLeaf" alt="" width="44" height="44" />
       <h1 id="registration-title">Регистрация</h1>
       <form ref="formElement" class="registration-form" novalidate @submit.prevent="submit">
         <div v-for="field in fields" :key="field.name" class="registration-field">
@@ -137,7 +140,7 @@ input {
   padding: 6px 16px 5px;
   border: 0;
   border-radius: 0;
-  background: #4e624a;
+  background: var(--surface-control);
   color: #fff;
   font: inherit;
   font-size: clamp(22px, 2.777778vw, 40px);
@@ -178,13 +181,14 @@ input[aria-invalid='true'] { box-shadow: inset 0 0 0 1px #ffc9bd; }
 .registration-login { margin: 24px 0 0; font-size: 18px; line-height: 22px; }
 a { color: #fff; text-underline-offset: 4px; }
 @media (max-width: 600px) {
-  .registration-page { padding: 24px 16px; }
-  .registration-panel { min-height: calc(100svh - 48px); padding: 28px 20px; }
-  h1 { margin-bottom: 36px; }
-  .registration-form { gap: 24px; }
-  input { height: 48px; }
+  .registration-page { padding: var(--auth-mobile-inset) clamp(16px, 5.83vw, 24px); }
+  .registration-panel { min-height: min(778px, calc(100svh - 2 * var(--auth-mobile-inset))); padding: 22px 16px 24px; }
+  h1 { margin-bottom: clamp(24px, 7.1svh, 65px); }
+  .registration-form { gap: clamp(14px, 3.81svh, 35px); }
+  input { height: 55px; font-size: 28px; }
   input, #firstName, #email, #confirmPassword { padding: 0 12px; }
-  .registration-submit { min-height: 64px; margin-top: 0; padding: 16px; }
+  .registration-submit { min-height: 55px; margin-top: clamp(8px, 4.6svh, 42px); padding: 8px 10px; font-size: clamp(20px, 6.8vw, 28px); }
+  .registration-login { margin-top: 16px; font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   input, .registration-submit { transition: none; }

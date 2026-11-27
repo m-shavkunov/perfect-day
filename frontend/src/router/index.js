@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { NetworkError } from '../api/client.js'
+import WelcomeView from '../views/WelcomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import OnboardingView from '../views/OnboardingView.vue'
@@ -17,7 +18,13 @@ import { isOnline, sessionCheckFailed } from '../state/connection.js'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', redirect: { name: 'dashboard' } },
+    {
+      path: '/', name: 'welcome', component: WelcomeView, meta: { title: 'Главная', layout: 'auth' },
+      beforeEnter: () => {
+        if (auth.token) return { name: 'dashboard', replace: true }
+        if (!isOnline.value) return { name: 'offline', query: { returnTo: '/' }, replace: true }
+      },
+    },
     { path: '/login', name: 'login', component: LoginView, meta: { title: 'Вход', layout: 'auth' } },
     { path: '/register', name: 'register', component: RegisterView, meta: { title: 'Регистрация', layout: 'auth' } },
     { path: '/onboarding', name: 'onboarding', component: OnboardingView, meta: { title: 'Настройка профиля', layout: 'auth' }, beforeEnter: () => hasRegistrationDetails() || { name: 'register', replace: true } },

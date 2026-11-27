@@ -200,7 +200,7 @@ async function cancelFailedDeletion() {
         id="task-form-panel" class="task-form-panel glass-panel"
         aria-labelledby="task-form-title" tabindex="0"
       >
-        <div class="tasks-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
+        <div class="mobile-divider tasks-mobile-divider"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
         <h2 id="task-form-title">{{ editing ? 'Редактировать задачу' : 'Добавить задачу' }}</h2>
         <p v-if="state.message && errorTarget === 'form'" class="feedback" role="status">{{ state.message }}</p>
         <form ref="formElement" novalidate @submit.prevent="saveTask">
@@ -265,7 +265,12 @@ async function cancelFailedDeletion() {
             </div>
             <div class="task-field">
               <label for="task-description">Описание <span class="optional">(необязательно)</span></label>
-              <textarea id="task-description" v-model="form.description" name="description" rows="3"></textarea>
+              <textarea
+                id="task-description" v-model="form.description" name="description" rows="3"
+                :aria-invalid="Boolean(errors.description)" :aria-describedby="errors.description ? 'task-description-error' : undefined"
+                @input="delete errors.description"
+              ></textarea>
+              <span v-if="errors.description" id="task-description-error" class="field-error">{{ errors.description }}</span>
             </div>
             <p v-if="state.error && errorTarget === 'form'" class="feedback feedback--error" role="alert">{{ state.error }}</p>
             <div class="form-actions">
@@ -276,7 +281,7 @@ async function cancelFailedDeletion() {
             </div>
           </fieldset>
         </form>
-        <div class="tasks-mobile-divider tasks-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
+        <div class="mobile-divider tasks-mobile-divider tasks-mobile-divider--bottom"><img :src="mobileDivider" alt="" width="334" height="1" /></div>
       </section>
     </div>
   </section>
@@ -290,16 +295,15 @@ async function cancelFailedDeletion() {
   min-height: 100svh;
   color: #fff;
   font: 20px/1.3 'Times New Roman', serif;
-  --panel-green: #4e624a;
   --control-green: #40523d;
 }
 .tasks-layout {
   display: grid;
-  grid-template: 'navigation list' calc(30px + var(--app-navigation-height)) 'form list' 1fr / var(--desktop-layout-columns);
+  grid-template: 'navigation list' calc(32px + var(--app-navigation-height)) 'form list' 1fr / var(--desktop-layout-columns);
   gap: var(--navigation-content-gap) var(--desktop-layout-column-gap);
   max-width: var(--desktop-layout-width);
   margin: 0 auto;
-  padding-block: 31px 0;
+  padding-block: 29px 0;
   padding-inline: var(--desktop-layout-padding-inline);
 }
 .tasks-navigation {
@@ -340,16 +344,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
 .task-type-picker { gap: 6px; }
 .task-type-picker legend { padding: 0 0 6px; font-size: 18px; }
-.task-type-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; background: var(--panel-green); padding: 6px; }
+.task-type-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; background: var(--surface-control); padding: 6px; }
 .task-type-option { position: relative; display: grid; place-items: center; min-height: 48px; padding: 3px; cursor: pointer; }
 .task-type-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
-.task-type-option:has(input:checked) { background: #dfead4; }
+.task-type-option:has(input:checked) { background: var(--control-green); box-shadow: inset 0 0 0 2px #e0e8d6; }
 .task-type-option:has(input:focus-visible) { outline: 2px solid #fff; }
 .task-type-option:has(input:disabled) { cursor: not-allowed; }
-.task-type-option:hover:not(:has(input:checked, input:disabled)) { background: #60755a; }
+.task-type-option:hover:not(:has(input:checked, input:disabled)) { background: var(--surface-action); }
 .selected-task-type { font-size: 17px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.tasks-mobile-divider, .task-mobile-heading { display: none; }
+.task-mobile-heading { display: none; }
 .form-pair { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 12px; }
 .task-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .task-field label, .optional { font-size: 18px; }
@@ -359,7 +363,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
   max-width: 100%;
   padding: 9px 11px;
   border: 1px solid rgb(255 255 255 / 45%);
-  background: var(--panel-green);
+  background: var(--surface-control);
   color-scheme: dark;
 }
 .task-field textarea { resize: vertical; }
@@ -369,22 +373,22 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .form-actions button {
   width: min(100%, 291px);
   min-height: 64px;
-  background: var(--panel-green);
+  background: var(--surface-action);
   font-size: clamp(20px, 2vw, 29px);
 }
 .form-actions .secondary { min-height: 44px; background: var(--control-green); font-size: 18px; }
 .task-list-panel {
   grid-area: list;
   min-width: 0;
-  min-height: calc(100svh - 31px);
-  padding: 30px clamp(20px, 2.1vw, 30px) 40px;
+  min-height: calc(100svh - 29px);
+  padding: 32px clamp(20px, 2.1vw, 30px) 40px;
 }
 .task-list-panel h1 {
   display: grid;
   place-items: center;
   min-height: 85px;
   padding: 10px;
-  background: var(--panel-green);
+  background: var(--surface-action);
 }
 .task-filter {
   display: grid;
@@ -395,7 +399,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
   font-size: clamp(23px, 2.4vw, 34px);
 }
 .task-filter label { justify-self: center; }
-.task-filter select { min-height: 75px; }
+.task-filter select { min-height: 75px; background: var(--surface-action); }
 .feedback { margin: 0 0 16px; padding: 16px; background: var(--control-green); overflow-wrap: anywhere; }
 .feedback--error { background: #693d35; }
 .feedback p { margin: 0 0 10px; }
@@ -405,7 +409,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .task-card {
   min-height: 197px;
   padding: 24px clamp(16px, 2.45vw, 35px);
-  background: var(--panel-green);
+  background: var(--surface-control);
 }
 .task-card-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px 20px; }
 .task-info { min-width: 0; overflow-wrap: anywhere; }
@@ -417,7 +421,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .task-description { margin: 10px 0 0; font-size: 18px; white-space: pre-wrap; }
 .task-details { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; font-size: 17px; }
 .task-details li { max-width: 100%; padding: 4px 8px; background: var(--control-green); }
-.task-details .task-type-badge { display: flex; align-items: center; gap: 6px; background: #dfead4; color: #253b2c; }
+.task-details .task-type-badge { display: flex; align-items: center; gap: 6px; }
 .task-details .task-status--done { background: #dfead4; color: #283f28; font-weight: 700; }
 .task-details .task-status--cancelled { background: #d4d8cf; color: #363c31; font-weight: 700; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -425,7 +429,7 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
 .task-form-panel:focus-visible, .task-list:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 
 @media (min-width: 901px) {
-  .tasks-layout { height: 100svh; grid-template-rows: calc(30px + var(--app-navigation-height)) minmax(0, 1fr); }
+  .tasks-layout { height: 100svh; grid-template-rows: calc(32px + var(--app-navigation-height)) minmax(0, 1fr); }
   .task-form-panel { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .task-list-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .task-list-panel h1, .task-filter, .feedback { flex: none; }
@@ -447,15 +451,17 @@ fieldset { display: grid; gap: 16px; min-inline-size: 0; margin: 0; padding: 0; 
   .tasks-navigation { width: auto; margin: 0 calc(-1 * var(--mobile-gutter)) 29px; justify-self: stretch; }
   .task-form-panel, .task-list-panel { min-height: 0; padding: 16px; box-shadow: none; border-inline: 1px solid rgb(255 255 255 / 20%); }
   .task-form-panel { padding-bottom: 28px; border-bottom: 1px solid rgb(255 255 255 / 20%); }
-  .tasks-mobile-divider { display: grid; justify-content: center; overflow: hidden; margin: 0 0 30px; }
+  .tasks-mobile-divider { margin: 0 0 30px; }
   .tasks-mobile-divider--bottom { margin: 24px 0 0; }
   .form-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .task-list-panel { border-top: 1px solid rgb(255 255 255 / 20%); }
   .task-list-panel h1 { min-height: 0; padding: 0; background: transparent; }
   .task-filter { margin: 16px 0 20px; gap: 12px; grid-template-columns: auto minmax(0, 1fr); }
   .task-filter select { min-height: 50px; }
+  .task-field :is(input, select, textarea) { background: var(--surface-action); }
   .task-list { gap: 24px; max-height: clamp(340px, 58svh, 530px); overflow: auto; overscroll-behavior: contain; }
   .task-card { padding: 0; }
+  .task-card:not(.task-card--done, .task-card--cancelled) { background: var(--surface-action); }
   .task-mobile-heading { display: block; margin: 0; font-weight: 400; }
   .task-card-toggle {
     position: relative;

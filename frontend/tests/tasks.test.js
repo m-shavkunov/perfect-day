@@ -44,6 +44,18 @@ test('creating a task sends a local deadline as an instant and omits status', ()
   })
 })
 
+test('task writes enforce API limits while partial edits omit untouched fields', () => {
+  const atLimit = { ...taskFormValues(task), title: '🙂'.repeat(200), description: 'я'.repeat(2000), duration_min: 1440 }
+  assert.deepEqual(prepareTask(atLimit).errors, {})
+  const overLimit = { ...atLimit, title: atLimit.title + '🙂', description: atLimit.description + 'я', duration_min: 1441 }
+  assert.deepEqual(Object.keys(prepareTask(overLimit).errors).sort(), ['description', 'duration_min', 'title'])
+
+  const original = { ...task, ...overLimit, title: ' Старое название ', deadline: null, description: 'Описание' }
+  assert.deepEqual(prepareTask({ ...taskFormValues(original), description: '', status: 'done' }, original), {
+    body: { description: null, status: 'done' }, errors: {},
+  })
+})
+
 test('task list rejects duplicate IDs and tasks from another account', async () => {
   for (const data of [[task, task], [{ ...task, user_id: 10 }]]) {
     globalThis.fetch = async () => json(data)
