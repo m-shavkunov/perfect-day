@@ -9,7 +9,7 @@ export const taskTypes = {
 
 export const taskPriorities = { low: 'Низкий', medium: 'Средний', high: 'Высокий' }
 export const taskStatuses = { planned: 'Запланировано', done: 'Выполнено', cancelled: 'Отменено' }
-export const maxTaskDuration = 2_147_483_647
+export const maxTaskDuration = 1440
 
 export function localTaskDeadline(value) {
   if (!value) return ''
@@ -40,12 +40,28 @@ export function prepareTask(form, original) {
     priority: form.priority,
     description: form.description.trim() || null,
   }
-  if (!body.title) errors.title = 'Введите название задачи.'
-  if (!Object.hasOwn(taskTypes, body.type)) errors.type = 'Выберите тип задачи.'
-  if (!Number.isInteger(body.duration_min) || body.duration_min < 1 || body.duration_min > maxTaskDuration) {
-    errors.duration_min = 'Введите целое положительное число минут.'
+
+  if (original) {
+    body.status = form.status
+    const previous = taskFormValues(original)
+    for (const key of Object.keys(body)) {
+      if (form[key] === previous[key] || body[key] === original[key]) delete body[key]
+    }
   }
-  if (!Object.hasOwn(taskPriorities, body.priority)) errors.priority = 'Выберите приоритет.'
+
+  if ('title' in body) {
+    if (!body.title) errors.title = 'Введите название задачи.'
+    else if (Array.from(body.title).length > 200) errors.title = 'Название должно содержать не более 200 символов.'
+  }
+  if ('type' in body && !Object.hasOwn(taskTypes, body.type)) errors.type = 'Выберите тип задачи.'
+  if ('duration_min' in body && (!Number.isInteger(body.duration_min) || body.duration_min < 1 || body.duration_min > maxTaskDuration)) {
+    errors.duration_min = `Введите целое число от 1 до ${maxTaskDuration} минут.`
+  }
+  if ('priority' in body && !Object.hasOwn(taskPriorities, body.priority)) errors.priority = 'Выберите приоритет.'
+  if ('status' in body && !Object.hasOwn(taskStatuses, body.status)) errors.status = 'Выберите статус.'
+  if (body.description && Array.from(body.description).length > 2000) {
+    errors.description = 'Описание должно содержать не более 2000 символов.'
+  }
 
   if (form.deadline !== localTaskDeadline(original?.deadline) || !original) {
     body.deadline = null
@@ -59,12 +75,5 @@ export function prepareTask(form, original) {
     }
   }
 
-  if (original) {
-    body.status = form.status
-    if (!Object.hasOwn(taskStatuses, form.status)) errors.status = 'Выберите статус.'
-    for (const key of Object.keys(body)) {
-      if (body[key] === original[key]) delete body[key]
-    }
-  }
   return { body, errors }
 }

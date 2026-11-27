@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from './client.js'
-import { maxTaskDuration, taskPriorities, taskStatuses, taskTypes } from '../utils/tasks.js'
+import { taskPriorities, taskStatuses, taskTypes } from '../utils/tasks.js'
 
 function isTask(task, userId) {
   return Number.isSafeInteger(task?.id) && task.id > 0 && task.user_id === userId
@@ -7,7 +7,7 @@ function isTask(task, userId) {
     && (task.description === null || typeof task.description === 'string')
     && Object.hasOwn(taskTypes, task.type) && Object.hasOwn(taskPriorities, task.priority)
     && Object.hasOwn(taskStatuses, task.status)
-    && Number.isInteger(task.duration_min) && task.duration_min > 0 && task.duration_min <= maxTaskDuration
+    && Number.isSafeInteger(task.duration_min) && task.duration_min > 0
     && (task.deadline === null || (typeof task.deadline === 'string' && Number.isFinite(Date.parse(task.deadline))))
 }
 

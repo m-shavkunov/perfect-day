@@ -1,17 +1,23 @@
 <script setup>
+import { computed, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
+import AppNotice from './components/AppNotice.vue'
 import { isOnline, sessionCheckFailed } from './state/connection.js'
 
 const route = useRoute()
+const connectionDismissed = ref(false)
+const connectionNotice = computed(() => {
+  if (!isOnline.value && route.name && route.name !== 'offline') return 'Нет подключения. Загруженные данные могут быть неактуальны.'
+  if (sessionCheckFailed.value) return 'Нет связи с сервером. Повторите переход, когда связь восстановится.'
+  return ''
+})
+watch(connectionNotice, () => { connectionDismissed.value = false })
 </script>
 
 <template>
-  <p v-if="!isOnline && route.name && route.name !== 'offline'" class="connection-notice" role="status">
-    Нет подключения. Загруженные данные могут быть неактуальны.
-  </p>
-  <p v-else-if="sessionCheckFailed" class="connection-notice" role="status">
-    Нет связи с сервером. Загруженные данные могут быть неактуальны. Повторите переход, когда связь восстановится.
-  </p>
+  <AppNotice v-if="connectionNotice && !connectionDismissed" class="connection-notice" kind="error" @dismiss="connectionDismissed = true">
+    {{ connectionNotice }}
+  </AppNotice>
   <div :class="route.meta.layout === 'auth' ? 'auth-shell' : 'app-shell'">
     <main :class="route.meta.layout === 'auth' ? 'auth-content' : 'page-content'">
       <RouterView />
@@ -24,11 +30,7 @@ const route = useRoute()
   position: sticky;
   top: 0;
   z-index: 5;
-  margin: 0;
-  padding: 8px 16px;
-  background: #e4d8a3;
-  color: #283f28;
-  font-size: 15px;
-  text-align: center;
+  width: min(450px, calc(100% - 24px));
+  margin-inline: auto 12px;
 }
 </style>

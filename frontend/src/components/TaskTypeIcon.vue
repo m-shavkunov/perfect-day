@@ -1,8 +1,8 @@
 <script setup>
-import intellectual from '../assets/task-intellectual.png'
-import physical from '../assets/task-physical.png'
-import creative from '../assets/task-creative.png'
-import routine from '../assets/task-routine.png'
+import intellectual from '../assets/task-intellectual.svg'
+import physical from '../assets/task-physical.svg'
+import creative from '../assets/task-creative.svg'
+import routine from '../assets/task-routine.svg'
 
 defineProps({ type: String, picker: Boolean })
 

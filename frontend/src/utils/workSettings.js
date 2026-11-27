@@ -1,8 +1,8 @@
 import { scheduleMinutes } from './schedule.js'
 
 const timeFields = ['work_start', 'work_end', 'lunch_start', 'lunch_end']
-const durationFields = ['break_duration_min', 'work_before_break_min']
-export const maxWorkSettingMinutes = 2147483647
+export const workSettingMinuteLimits = { break_duration_min: 120, work_before_break_min: 240 }
+const durationFields = Object.keys(workSettingMinuteLimits)
 export const defaultWorkSettings = {
   work_start: '09:00', work_end: '18:00', lunch_start: '13:00', lunch_end: '14:00',
   break_duration_min: 10, work_before_break_min: 50,
@@ -36,9 +36,9 @@ export function prepareWorkSettings(values, saved = {}) {
   }
   for (const field of durationFields) {
     const value = values[field]
+    const max = workSettingMinuteLimits[field]
     body[field] = value
-    if (!Number.isInteger(value) || value < 1) errors[field] = 'Введите положительное целое число.'
-    else if (value > maxWorkSettingMinutes) errors[field] = 'Значение слишком большое.'
+    if (!Number.isInteger(value) || value < 1 || value > max) errors[field] = `Введите целое число от 1 до ${max} минут.`
   }
 
   const { work_start: workStart, work_end: workEnd, lunch_start: lunchStart, lunch_end: lunchEnd } = body

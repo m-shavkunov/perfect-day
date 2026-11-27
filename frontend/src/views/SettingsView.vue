@@ -5,7 +5,7 @@ import AppNavigation from '../components/AppNavigation.vue'
 import { auth, signOut } from '../state/auth.js'
 import { isOnline } from '../state/connection.js'
 import { createSettingsState } from '../state/settings.js'
-import { maxWorkSettingMinutes } from '../utils/workSettings.js'
+import { workSettingMinuteLimits } from '../utils/workSettings.js'
 
 const router = useRouter()
 const formElement = ref(null)
@@ -72,7 +72,7 @@ async function submit() {
                   :id="field.name" v-model="state.form[field.name]" :name="field.name" :type="group.type" required
                   :step="group.type === 'time' ? 60 : 1"
                   :min="group.type === 'number' ? 1 : undefined"
-                  :max="group.type === 'number' ? maxWorkSettingMinutes : undefined"
+                  :max="workSettingMinuteLimits[field.name]"
                   :aria-invalid="state.fieldErrors[field.name] ? 'true' : undefined"
                   :aria-describedby="state.fieldErrors[field.name] ? field.name + '-error' : undefined"
                 />

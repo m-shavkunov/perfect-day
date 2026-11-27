@@ -1,4 +1,7 @@
 :root {
+  --surface-control: #5e6a5b;
+  --surface-action: #4e624a;
+  --background-overlay: rgb(77 89 61 / 40%);
   --navigation-content-gap: 46px;
   --app-navigation-height: 85px;
   --desktop-layout-width: 1440px;
@@ -7,7 +10,7 @@
   --desktop-layout-padding-inline: 30px 31px;
   font-family: Arial, sans-serif;
   color: #253b2c;
-  background: #69765b;
+  background: #4d593d;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -27,11 +30,41 @@ body { margin: 0; min-width: 0; }
   height: 100vh;
   height: 100lvh;
   z-index: -1;
-  background: linear-gradient(rgb(105 118 91 / 40%), rgb(105 118 91 / 40%)), url('./assets/leaves.jpg') center / cover no-repeat;
+  background: linear-gradient(var(--background-overlay), var(--background-overlay)), url('./assets/leaves.jpg') center / cover no-repeat;
   pointer-events: none;
 }
 .glass-panel { background: rgb(0 0 0 / 40%); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%); }
 .glass-panel--inset { background: rgb(78 98 74 / 20%); }
+.auth-brand { display: none; }
+.mobile-divider { display: none; }
+
+.design-disclosure {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 55px;
+  padding: 8px 38px 8px 16px;
+  color: #fff;
+  background: var(--surface-control);
+  border: 0;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.design-disclosure::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 6px);
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+.design-disclosure[aria-expanded='true']::after { transform: rotate(225deg); }
+.design-disclosure:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 .welcome {
   width: 100%;
@@ -57,8 +90,12 @@ a:focus-visible { outline: 3px solid #52664a; outline-offset: 4px; border-radius
 }
 @media (max-width: 900px) {
   :root { --navigation-content-gap: 24px; --app-navigation-height: 60px; }
+  .mobile-divider { display: block; }
+  .mobile-divider img { display: block; width: 100%; height: 1px; }
 }
 @media (max-width: 600px) {
+  :root { --auth-mobile-inset: clamp(24px, 7.64svh, 70px); }
+  .auth-brand { display: block; width: 44px; height: 44px; margin-inline: auto; }
   .app-shell { padding: 16px; }
   .page-content { padding: 24px 0; }
 }

@@ -119,6 +119,21 @@ test('conflicting placement is rejected before saving and cancelling a draft res
   page.dispose()
 })
 
+test('an empty draft stays editable and is not sent as a schedule update', async () => {
+  const { page, server } = await fixture()
+  page.beginEdit()
+  for (const item of page.displayedItems.value) assert.equal(page.removeItem(item.key), true)
+  assert.match(page.editValidation.value.errors[0], /хотя бы один блок/)
+  const callsBefore = server.calls.length
+  assert.equal(await page.saveEdit(), false)
+  assert.equal(server.calls.length, callsBefore)
+  assert.deepEqual(page.state.draft, [])
+  assert.equal(page.placeItem(block(10, '10:00', '11:00')), true)
+  assert.equal(await page.saveEdit(), true)
+  assert.equal(server.plan.items.length, 1)
+  page.dispose()
+})
+
 test('a fresh server conflict prevents overwrite and retains the draft', async () => {
   const { page, server } = await fixture()
   page.beginEdit()

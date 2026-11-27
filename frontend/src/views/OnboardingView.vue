@@ -1,10 +1,12 @@
 <script setup>
 import { nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import brandLeaf from '../assets/brand-leaf.svg'
 import { registrationDraft } from '../state/registration'
 import { registerAccount } from '../api/auth.js'
 import { auth, signIn } from '../state/auth.js'
 import { isOnline } from '../state/connection.js'
+import { isDateString, localDateString } from '../utils/dates.js'
 
 const router = useRouter()
 const formElement = ref(null)
@@ -28,13 +30,12 @@ const chronotypes = [
   { value: 'owl', label: 'Сова' },
   { value: 'dove', label: 'Голубь' },
 ]
+const mobileChoices = [
+  { name: 'gender', label: 'Пол', options: genders },
+  { name: 'chronotype', label: 'Хронотип', options: chronotypes },
+]
 
-function localToday() {
-  const today = new Date()
-  return [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-')
-}
-
-const maxBirthDate = ref(localToday())
+const maxBirthDate = ref(localDateString())
 
 watch(form, () => {
   Object.assign(registrationDraft, form)
@@ -43,10 +44,10 @@ watch(form, () => {
 
 function validateField(name) {
   if (name === 'birthDate') {
-    maxBirthDate.value = localToday()
+    maxBirthDate.value = localDateString()
     errors.birthDate = !form.birthDate
       ? 'Укажите дату рождения.'
-      : !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate) || form.birthDate < '0001-01-01'
+      : !isDateString(form.birthDate)
         ? 'Укажите корректную дату рождения.'
         : form.birthDate > maxBirthDate.value
           ? 'Дата рождения не может быть в будущем.'
@@ -76,7 +77,8 @@ async function submit() {
 
   if (Object.values(errors).some(Boolean)) {
     await nextTick()
-    formElement.value.querySelector('input[aria-invalid="true"]')?.focus()
+    Array.from(formElement.value.querySelectorAll('[aria-invalid="true"]'))
+      .find(control => control.offsetParent)?.focus()
     return
   }
 
@@ -105,6 +107,7 @@ async function submit() {
 <template>
   <section class="onboarding-page" aria-labelledby="profile-title">
     <div class="profile-panel glass-panel">
+      <img class="auth-brand" :src="brandLeaf" alt="" width="44" height="44" />
       <h1 id="profile-title">Профиль</h1>
       <form ref="formElement" class="profile-form" :aria-busy="isSubmitting" novalidate @submit.prevent="submit">
         <div class="identity-field">
@@ -180,6 +183,21 @@ async function submit() {
           </div>
           <p v-if="errors.chronotype" id="chronotype-error" class="field-error" aria-live="polite">{{ errors.chronotype }}</p>
         </fieldset>
+        <div v-for="choice in mobileChoices" :key="choice.name" class="mobile-choice">
+          <label :for="`onboarding-${choice.name}`" class="visually-hidden">{{ choice.label }}</label>
+          <div class="mobile-select">
+            <select
+              :id="`onboarding-${choice.name}`" v-model="form[choice.name]" :name="choice.name"
+              :disabled="isSubmitting" :aria-invalid="Boolean(errors[choice.name])"
+              :aria-describedby="errors[choice.name] ? `mobile-${choice.name}-error` : undefined"
+              @change="handleChange(choice.name)" @blur="handleBlur(choice.name)"
+            >
+              <option value="" disabled>{{ choice.label }}</option>
+              <option v-for="option in choice.options" :key="option.value" :value="option.value">{{ option.accessibleLabel || option.label }}</option>
+            </select>
+          </div>
+          <p v-if="errors[choice.name]" :id="`mobile-${choice.name}-error`" class="field-error" aria-live="polite">{{ errors[choice.name] }}</p>
+        </div>
         <button class="profile-submit" type="submit" :disabled="!isOnline || isSubmitting">{{ isSubmitting ? (accountCreated ? 'Входим…' : 'Создаём аккаунт…') : 'Продолжить' }}</button>
         <p v-if="notice" class="profile-notice" role="alert">{{ notice }}</p>
       </form>
@@ -230,7 +248,7 @@ h1 { margin: 0; font-size: clamp(30px, 3.333334vw, 48px); font-weight: 400; line
   padding: 6px 16px 5px;
   border: 0;
   border-radius: 0;
-  background: #4e624a;
+  background: var(--surface-control);
   color: #fff;
   font: inherit;
   font-size: clamp(22px, 2.777778vw, 40px);
@@ -249,6 +267,7 @@ h1 { margin: 0; font-size: clamp(30px, 3.333334vw, 48px); font-weight: 400; line
 .date-placeholder { position: absolute; inset: 0; display: grid; place-items: center; font-size: clamp(22px, 2.777778vw, 40px); pointer-events: none; }
 .date-control:focus-within .date-placeholder { display: none; }
 .choice-group { min-width: 0; padding: 0; margin: 0; border: 0; }
+.mobile-choice { display: none; }
 .choice-group legend { text-align: center; float: left; width: 100%; padding: 0; font-size: clamp(22px, 2.777778vw, 40px); line-height: 46px; }
 .choice-group legend + * { clear: both; }
 .gender-group { margin-top: 21px; }
@@ -281,18 +300,22 @@ input[aria-invalid='true'] { box-shadow: inset 0 0 0 1px #ffc9bd; }
   .choice-label { font-size: clamp(20px, 2.777778vw, 40px); }
 }
 @media (max-width: 600px) {
-  .onboarding-page { padding: 24px 16px; }
-  .profile-panel { min-height: calc(100svh - 48px); padding: 28px 20px; }
+  .onboarding-page { padding: var(--auth-mobile-inset) clamp(16px, 5.83vw, 24px); }
+  .profile-panel { min-height: min(778px, calc(100svh - 2 * var(--auth-mobile-inset))); padding: 22px 16px 24px; }
   h1 { line-height: 1.2; }
-  .profile-form { margin-top: 32px; }
-  .identity-field input, .date-control input { height: 48px; padding: 0 12px; line-height: 1.2; }
-  .gender-group, .chronotype-group { margin-top: 24px; }
-  .choice-group legend { line-height: 1.2; }
-  .gender-choices { width: min(100%, 240px); grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 16px; gap: 16px; }
-  .chronotype-choices { grid-template-columns: minmax(0, 1fr); padding-top: 16px; gap: 12px; }
-  .choice-label { min-height: 48px; padding: 10px; font-size: 22px; line-height: 1.2; }
-  .profile-submit { transform: none; min-height: 64px; margin-top: 32px; line-height: 1.2; }
-  .back-link { margin-top: 20px; }
+  .profile-form { margin-top: clamp(24px, 7.1svh, 65px); }
+  .identity-field--last-name, .birth-date-field, .mobile-choice { margin-top: clamp(14px, 3.81svh, 35px); }
+  .identity-field input, .date-control input { height: 55px; padding: 0 12px; font-size: 28px; line-height: 1.2; }
+  .date-placeholder { font-size: 28px; }
+  .choice-group { display: none; }
+  .mobile-choice { display: block; }
+  .mobile-select { position: relative; }
+  .mobile-select::after { content: ''; position: absolute; top: calc(50% - 6px); right: 16px; width: 8px; height: 8px; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); pointer-events: none; }
+  .mobile-select select { appearance: none; display: block; width: 100%; min-height: 55px; padding: 0 34px; border: 0; border-radius: 0; background: var(--surface-control); color: inherit; color-scheme: dark; font: inherit; font-size: 28px; text-align: center; }
+  .mobile-select select:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+  .mobile-select select[aria-invalid='true'] { box-shadow: inset 0 0 0 1px #ffc9bd; }
+  .profile-submit { transform: none; width: 100%; min-height: 55px; margin-top: clamp(24px, 8.4svh, 77px); padding: 8px 12px; font-size: 28px; line-height: 1.2; }
+  .back-link { margin-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .date-control input, .choice-label, .profile-submit { transition: none; }

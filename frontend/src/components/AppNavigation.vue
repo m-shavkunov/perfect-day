@@ -2,6 +2,7 @@
 import { ref, useId, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import menuIcon from '../assets/mobile-menu.png'
+import brandLeaf from '../assets/brand-leaf.svg'
 
 const route = useRoute()
 const menuId = useId()
@@ -34,6 +35,7 @@ const sections = [
         <img :src="menuIcon" alt="" width="55" height="55" />
       </button>
       <span>Идеальный день</span>
+      <img class="app-navigation__leaf" :src="brandLeaf" alt="" width="44" height="44" />
     </div>
     <div :id="menuId" class="app-navigation__links" :class="{ 'app-navigation__links--open': menuOpen }">
       <RouterLink
@@ -105,6 +107,7 @@ const sections = [
     cursor: pointer;
   }
   .app-navigation__toggle img { display: block; }
+  .app-navigation__leaf { display: block; justify-self: center; }
   .app-navigation__toggle:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
   .app-navigation__links {
     position: absolute;

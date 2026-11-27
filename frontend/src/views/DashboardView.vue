@@ -93,35 +93,7 @@ function selectDate(date) {
   <section class="dashboard-page" aria-labelledby="dashboard-title">
     <h1 id="dashboard-title" class="visually-hidden">Дашборд</h1>
     <div class="dashboard-layout">
-      <aside class="dashboard-sidebar" aria-label="Разделы приложения и показатели на выбранную дату">
-        <AppNavigation class="dashboard-navigation" />
-        <section class="summary-panel glass-panel" aria-labelledby="summary-title" tabindex="0">
-          <h2 id="summary-title" class="summary-date">Биоритмы на <time :datetime="dashboard.selectedDate">{{ selectedDateLabel }}</time></h2>
-          <dl class="metrics" :aria-busy="dashboard.daily.status === 'loading'">
-            <div v-for="biorhythm in biorhythms" :key="biorhythm.id" class="metric">
-              <dt>{{ biorhythm.label }}:</dt>
-              <dd v-if="dashboard.daily.status === 'success'">{{ formatPercentage(dashboard.daily.data[biorhythm.id]) }}</dd>
-              <dd v-else><span aria-hidden="true">—</span><span class="visually-hidden">{{ dashboard.daily.status === 'loading' ? 'Загрузка' : 'Нет данных' }}</span></dd>
-            </div>
-          </dl>
-          <p class="summary-scale">Шкала от −100% до +100%.</p>
-          <p v-if="summaryMessage" class="summary-empty" role="status">{{ summaryMessage }}</p>
-          <CriticalDaysPanel
-            :items="dashboard.criticalDays.status === 'success' ? dashboard.criticalDays.data.items : []"
-            :status="dashboard.criticalDays.status"
-            :selected-date="dashboard.selectedDate"
-            @select-date="selectDate"
-            @retry="load(['criticalDays'])"
-          />
-          <RecommendationsPanel
-            :items="dashboard.recommendations.status === 'success' ? dashboard.recommendations.data.items : []"
-            :status="dashboard.recommendations.status"
-            :error="dashboard.recommendations.error"
-            :selected-date="dashboard.selectedDate"
-            @retry="load(['recommendations'])"
-          />
-        </section>
-      </aside>
+      <AppNavigation class="dashboard-navigation" />
       <section class="forecast-panel glass-panel" :class="{ 'forecast-panel--expanded': hasErrors || dateError }" aria-label="Прогноз биоритмов">
         <div class="forecast-controls">
           <label class="date-field" for="dashboard-date">
@@ -193,6 +165,33 @@ function selectDate(date) {
           <p v-else class="forecast-empty" role="status">{{ forecastMessage }}</p>
         </div>
       </section>
+      <section class="summary-panel glass-panel" aria-labelledby="summary-title" tabindex="0">
+        <RecommendationsPanel
+          class="dashboard-recommendations"
+          :items="dashboard.recommendations.status === 'success' ? dashboard.recommendations.data.items : []"
+          :status="dashboard.recommendations.status"
+          :error="dashboard.recommendations.error"
+          :selected-date="dashboard.selectedDate"
+          @retry="load(['recommendations'])"
+        />
+        <h2 id="summary-title" class="summary-date">Биоритмы на <time :datetime="dashboard.selectedDate">{{ selectedDateLabel }}</time></h2>
+        <dl class="metrics" :aria-busy="dashboard.daily.status === 'loading'">
+          <div v-for="biorhythm in biorhythms" :key="biorhythm.id" class="metric">
+            <dt>{{ biorhythm.label }}:</dt>
+            <dd v-if="dashboard.daily.status === 'success'">{{ formatPercentage(dashboard.daily.data[biorhythm.id]) }}</dd>
+            <dd v-else><span aria-hidden="true">—</span><span class="visually-hidden">{{ dashboard.daily.status === 'loading' ? 'Загрузка' : 'Нет данных' }}</span></dd>
+          </div>
+        </dl>
+        <p class="summary-scale">Шкала от −100% до +100%.</p>
+        <p v-if="summaryMessage" class="summary-empty" role="status">{{ summaryMessage }}</p>
+        <CriticalDaysPanel
+          :items="dashboard.criticalDays.status === 'success' ? dashboard.criticalDays.data.items : []"
+          :status="dashboard.criticalDays.status"
+          :selected-date="dashboard.selectedDate"
+          @select-date="selectDate"
+          @retry="load(['criticalDays'])"
+        />
+      </section>
     </div>
   </section>
 </template>
@@ -209,8 +208,8 @@ function selectDate(date) {
 }
 .dashboard-layout {
   display: grid;
-  grid-template-columns: var(--desktop-layout-columns);
-  gap: var(--desktop-layout-column-gap);
+  grid-template: 'navigation forecast' calc(32px + var(--app-navigation-height)) 'summary forecast' auto / var(--desktop-layout-columns);
+  gap: var(--navigation-content-gap) var(--desktop-layout-column-gap);
   width: 100%;
   max-width: var(--desktop-layout-width);
   margin: 0 auto;
@@ -242,9 +241,10 @@ button {
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 button:active { background: #344630; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
-.dashboard-sidebar { display: flex; flex-direction: column; min-width: 0; align-self: start; }
-.dashboard-navigation { align-self: center; margin-top: 32px; }
-.summary-panel { flex: none; min-width: 0; height: calc(100svh - 61px - var(--app-navigation-height) - var(--navigation-content-gap)); min-height: 520px; margin-top: var(--navigation-content-gap); padding: 32px 51px; overflow: auto; overscroll-behavior: contain; }
+.dashboard-navigation { grid-area: navigation; align-self: end; justify-self: center; }
+.summary-panel { grid-area: summary; display: flex; flex-direction: column; min-width: 0; height: calc(100svh - 61px - var(--app-navigation-height) - var(--navigation-content-gap)); min-height: 520px; padding: 32px 51px; overflow: auto; overscroll-behavior: contain; }
+.summary-panel > * { flex: none; }
+.dashboard-recommendations { order: 1; }
 .summary-panel:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .summary-date { margin: 0 0 24px; font-size: 20px; font-weight: 400; line-height: 1.4; overflow-wrap: anywhere; }
 .metrics { margin: 0; font-size: clamp(22px, 2.15vw, 30px); line-height: 1.5; }
@@ -254,7 +254,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .metric dd { margin: 0 0 0 auto; font-size: 0.8em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .summary-scale { margin: 20px 0 0; font-size: 18px; line-height: 1.4; }
 .summary-empty { margin: 16px 0 0; font-size: 22px; line-height: 26px; }
-.forecast-panel { display: flex; flex-direction: column; min-width: 0; height: calc(100svh - 29px); min-height: 680px; padding: 32px 0 40px; }
+.forecast-panel { grid-area: forecast; display: flex; flex-direction: column; min-width: 0; height: calc(100svh - 29px); min-height: 680px; padding: 32px 0 40px; }
 .forecast-controls, .period-switch, .period-navigation, .request-feedback { flex: none; }
 .forecast-controls { margin: 0 24px 24px 25px; min-width: 0; }
 .date-field { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 22px; }
@@ -289,9 +289,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   .metrics { font-size: clamp(20px, 2.15vw, 28px); }
 }
 @media (max-width: 900px) {
-  .dashboard-layout { grid-template-columns: minmax(0, 1fr); padding: 0 16px 24px; gap: 24px; }
-  .dashboard-navigation { width: auto; margin: 0 -16px; align-self: stretch; }
+  .dashboard-layout { grid-template: 'navigation' auto 'forecast' auto 'summary' auto / minmax(0, 1fr); padding: 0 16px 24px; gap: 24px; }
+  .dashboard-navigation { width: auto; margin: 0 -16px; justify-self: stretch; }
   .summary-panel { height: auto; min-height: 0; padding: 32px; overflow: visible; }
+  .dashboard-recommendations { order: 0; margin: 0 0 24px; border-top-color: rgb(255 255 255 / 70%); }
   .metrics { line-height: 1.5; }
   .forecast-panel { height: auto; min-height: 0; padding: 24px 0 32px; }
   .forecast-results { flex: none; height: clamp(440px, 65svh, 600px); }

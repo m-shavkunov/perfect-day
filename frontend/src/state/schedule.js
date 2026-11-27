@@ -10,7 +10,7 @@ import { adaptScheduleRemainder, adaptationTasksFingerprint, staleAdaptationReas
 import { sameWorkSettings } from '../utils/workSettings.js'
 import {
   clearLocalSchedule, draftScheduleItems, protectedSlotReason, readLocalSchedule,
-  sameScheduleItems, saveLocalSchedule, scheduleChanges, scheduleFingerprint, validateScheduleEdit,
+  sameScheduleItems, saveLocalSchedule, scheduleChanges, scheduleFingerprint, scheduleSizeError, validateScheduleEdit,
 } from '../utils/scheduleEditing.js'
 
 export function createScheduleState({ userId, getToken, onUnauthorized, storage = getPlanningStorage(), getNow = () => new Date() }) {
@@ -27,8 +27,12 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   const displayedItems = computed(() => state.draft ?? state.localItems ?? state.plan?.items ?? [])
   const dirty = computed(() => state.draft !== null && !sameScheduleItems(state.draft, state.initialDraft))
   const changes = computed(() => state.draft === null ? [] : scheduleChanges(state.initialDraft, state.draft, state.tasks.items))
-  const editValidation = computed(() => state.draft === null ? { errors: [], localReasons: [] }
-    : validateScheduleEdit(state.draft, state.tasks.items, state.plan.items, { settings: state.settings.values }))
+  const editValidation = computed(() => {
+    if (state.draft === null) return { errors: [], localReasons: [] }
+    const sizeError = scheduleSizeError(state.draft.length)
+    if (sizeError) return { errors: [sizeError], localReasons: [] }
+    return validateScheduleEdit(state.draft, state.tasks.items, state.plan.items, { settings: state.settings.values })
+  })
   let addedItemNumber = 0
   let selection
   let taskRequest
@@ -268,6 +272,11 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
     }
     const item = { ...candidate, key: replacingKey ?? (candidate.item_type === 'task' ? 'task:' + candidate.task_id : 'added-break:' + ++addedItemNumber) }
     const next = [...state.draft.filter(item => item.key !== replacingKey), item]
+    const sizeError = !replacingKey && scheduleSizeError(next.length)
+    if (sizeError) {
+      state.saveError = sizeError
+      return false
+    }
     const validation = validateScheduleEdit(next, state.tasks.items, state.plan.items, { settings: state.settings.values, candidate: item })
     if (validation.errors.length) {
       state.saveError = validation.errors[0]
@@ -349,6 +358,11 @@ export function createScheduleState({ userId, getToken, onUnauthorized, storage 
   async function saveEdit({ local = false } = {}) {
     const request = selection
     if (!request || !isCurrent(request, selection) || state.saving || state.adapting || !dirty.value) return false
+    const sizeError = scheduleSizeError(state.draft.length)
+    if (sizeError) {
+      state.saveError = sizeError
+      return false
+    }
     state.saving = true
     state.saveError = ''
     state.saveConflict = false
